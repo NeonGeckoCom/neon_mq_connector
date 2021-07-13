@@ -58,7 +58,7 @@ setup(
     author='NeonGecko',
     author_email='developers@neon.ai',
     license='NeonAI License v1.0',
-    packages=['neon_api_proxy'],
+    packages=['neon_mq_connector'],
     install_requires=get_requirements("requirements.txt"),
     zip_safe=True,
     classifiers=[
