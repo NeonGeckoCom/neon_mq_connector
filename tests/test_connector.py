@@ -65,12 +65,15 @@ class MQConnectorChildTest(unittest.TestCase):
                                                   service_name='test')
         cls.connector_instance.run_consumers(names=('test1', 'test2'))
 
+    def test_01_not_null_service_id(self):
+        self.assertIsNotNone(self.connector_instance.service_id)
+
     @pytest.mark.timeout(30)
-    def test_01_connection_alive(self):
+    def test_02_connection_alive(self):
         self.assertIsInstance(self.connector_instance.consumers['test1'], ConsumerThread)
 
     @pytest.mark.timeout(30)
-    def test_02_produce(self):
+    def test_03_produce(self):
         self.channel = self.connector_instance.connection.channel()
         self.channel.basic_publish(exchange='',
                                    routing_key='test',
