@@ -75,9 +75,13 @@ class MQConnector(ABC):
             :param service_name: name of current service
        """
         self.config = config
-        self.service_id = self.create_service_id()
+        self._service_id = self.create_service_id()
         self.service_name = service_name
         self.consumers = dict()
+
+    @property
+    def service_id(self):
+        return self._service_id
 
     @property
     def mq_credentials(self):
