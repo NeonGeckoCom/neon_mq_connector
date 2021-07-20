@@ -17,6 +17,7 @@
 # US Patents 2008-2021: US7424516, US20140161250, US20140177813, US8638908, US8068604, US8553852, US10530923, US10530924
 # China Patent: CN102017585  -  Europe Patent: EU2156652  -  Patents Pending
 
+import uuid
 import pika
 import threading
 
@@ -74,8 +75,13 @@ class MQConnector(ABC):
             :param service_name: name of current service
        """
         self.config = config
+        self._service_id = self.create_service_id()
         self.service_name = service_name
         self.consumers = dict()
+
+    @property
+    def service_id(self):
+        return self._service_id
 
     @property
     def mq_credentials(self):
@@ -84,6 +90,11 @@ class MQConnector(ABC):
             raise Exception('Configuration is not set')
         return pika.PlainCredentials(self.config['MQ']['users'][self.service_name].get('user', 'guest'),
                                      self.config['MQ']['users'][self.service_name].get('password', 'guest'))
+
+    @staticmethod
+    def create_service_id():
+        """Method for generating unique service id, must be invoked on every instance instantiation"""
+        return uuid.uuid4().hex
 
     def create_mq_connection(self, vhost: str = '/', **kwargs):
         """
