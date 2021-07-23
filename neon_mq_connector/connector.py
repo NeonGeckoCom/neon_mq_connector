@@ -141,15 +141,18 @@ class MQConnector(ABC):
                                                       **kwargs)
         return pika.BlockingConnection(parameters=connection_params)
 
-    def run_consumers(self, names: tuple = ()):
+    def run_consumers(self, names: tuple = (), daemon=True):
         """
             Runs consumer threads based on the name if present (starts all of the declared consumers by default)
+
+            :param names: names of consumers to consider
+            :param daemon: to kill consumer threads once main thread is over
         """
         if not names or len(names) == 0:
             names = list(self.consumers)
         for name in names:
             if name in list(self.consumers):
-                self.consumers[name].daemon = True
+                self.consumers[name].daemon = daemon
                 self.consumers[name].start()
 
     def stop_consumers(self, names: tuple = ()):
