@@ -24,6 +24,7 @@ import threading
 from abc import ABC, abstractmethod
 from typing import Optional
 from neon_utils import LOG
+from neon_utils.socket_utils import dict_to_b64
 
 
 class ConsumerThread(threading.Thread):
@@ -75,7 +76,7 @@ class MQConnector(ABC):
             :param service_name: name of current service
        """
         self.config = config
-        self._service_id = self.create_service_id()
+        self._service_id = self.create_unique_id()
         self.service_name = service_name
         self.consumers = dict()
 
@@ -92,9 +93,36 @@ class MQConnector(ABC):
                                      self.config['MQ']['users'][self.service_name].get('password', 'guest'))
 
     @staticmethod
-    def create_service_id():
-        """Method for generating unique service id, must be invoked on every instance instantiation"""
+    def create_unique_id():
+        """Method for generating unique id"""
         return uuid.uuid4().hex
+
+    @classmethod
+    def emit_mq_message(cls, connection: pika.BlockingConnection, queue: str, request_data: dict,
+                        exchange: Optional[str]) -> int:
+        """
+            Emits request to the neon api service on the MQ bus
+
+            :param connection: pika connection object
+            :param queue: name of the queue to publish in
+            :param request_data: dictionary with the request data
+            :param exchange: name of the exchange (optional)
+
+            :raises ValueError: invalid request data provided
+            :returns message_id: id of the sent message
+        """
+        if request_data and len(request_data) > 0 and isinstance(request_data, dict):
+            message_id = cls.create_unique_id()
+            request_data['message_id'] = message_id
+            channel = connection.channel()
+            channel.basic_publish(exchange=exchange or '',
+                                  routing_key=queue,
+                                  body=dict_to_b64(request_data),
+                                  properties=pika.BasicProperties(expiration='1000'))
+            channel.close()
+            return message_id
+        else:
+            raise ValueError(f'Invalid request data provided: {request_data}')
 
     def create_mq_connection(self, vhost: str = '/', **kwargs):
         """
