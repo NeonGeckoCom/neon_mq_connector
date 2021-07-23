@@ -76,7 +76,7 @@ class MQConnector(ABC):
             :param service_name: name of current service
        """
         self.config = config
-        self._service_id = self.create_service_id()
+        self._service_id = self.create_unique_id()
         self.service_name = service_name
         self.consumers = dict()
 
