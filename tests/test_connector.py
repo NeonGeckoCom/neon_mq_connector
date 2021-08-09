@@ -18,14 +18,15 @@
 # China Patent: CN102017585  -  Europe Patent: EU2156652  -  Patents Pending
 
 import os
+import sys
 import time
-import threading
 import unittest
 import pytest
 import pika
 
-from config import Configuration
-from connector import MQConnector, ConsumerThread
+sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
+from neon_mq_connector.config import Configuration
+from neon_mq_connector.connector import MQConnector, ConsumerThread
 from neon_utils import LOG
 
 
@@ -57,13 +58,21 @@ class MQConnectorChild(MQConnector):
 class MQConnectorChildTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        if os.environ.get('GITHUB_CI', False):
-            cls.file_path = "~/.local/share/neon/credentials.json"
-        else:
-            cls.file_path = 'config.json'
+        cls.file_path = 'config.json' if os.path.isfile("config.json") else "~/.local/share/neon/mq_config.json"
         cls.connector_instance = MQConnectorChild(config=Configuration(file_path=cls.file_path).config_data,
                                                   service_name='test')
         cls.connector_instance.run_consumers(names=('test1', 'test2'))
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        try:
+            cls.connector_instance.stop_consumers(names=('test1', 'test2'))
+        except ChildProcessError as e:
+            LOG.error(e)
+        try:
+            cls.connector_instance.connection.close()
+        except pika.exceptions.StreamLostError as e:
+            LOG.error(f'Consuming error: {e}')
 
     def test_01_not_null_service_id(self):
         self.assertIsNotNone(self.connector_instance.service_id)
@@ -93,11 +102,3 @@ class MQConnectorChildTest(unittest.TestCase):
         time.sleep(3)
         self.assertTrue(self.connector_instance.func_1_ok)
         self.assertTrue(self.connector_instance.func_2_ok)
-
-    @classmethod
-    def tearDownClass(cls) -> None:
-        cls.connector_instance.stop_consumers(names=('test1', 'test2'))
-        try:
-            cls.connector_instance.connection.close()
-        except pika.exceptions.StreamLostError as e:
-            LOG.error(f'Consuming error: {e}')

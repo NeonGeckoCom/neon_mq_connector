@@ -162,5 +162,8 @@ class MQConnector(ABC):
         if not names or len(names) == 0:
             names = list(self.consumers)
         for name in names:
-            if name in list(self.consumers):
-                self.consumers[name].join()
+            try:
+                if name in list(self.consumers):
+                    self.consumers[name].join()
+            except Exception as e:
+                raise ChildProcessError(e)
