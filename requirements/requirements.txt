@@ -1,2 +1,2 @@
 pika==1.2.0
-neon_utils @ git+https://github.com/neongeckocom/neon-skill-utils
+neon_utils>=0.5.7
