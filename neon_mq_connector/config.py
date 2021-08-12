@@ -19,13 +19,21 @@
 
 import os
 import json
+from typing import Optional
 
 
 class Configuration:
+    def __init__(self, file_path: Optional[str] = None):
+        self._config_data = dict()
+        if file_path:
+            self.from_file(file_path)
 
-    def __init__(self, file_path: str):
+    def from_file(self, file_path: str):
         with open(os.path.expanduser(file_path)) as input_file:
             self._config_data = json.load(input_file)
+
+    def from_dict(self, config_data: dict):
+        self._config_data = config_data
 
     @property
     def config_data(self) -> dict:

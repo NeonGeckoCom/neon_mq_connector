@@ -19,6 +19,7 @@
 
 import uuid
 import pika
+import pika.exceptions
 import threading
 
 from abc import ABC, abstractmethod
@@ -72,10 +73,16 @@ class MQConnector(ABC):
     @abstractmethod
     def __init__(self, config: dict, service_name: str):
         """
-            :param config: dictionary with current configurations
+            :param config: dictionary with current configurations.
+                   { "users": {"<service_name>": { "username": "<username>",
+                                                   "password": "<password>" },
+                     "server": "api.neon.ai"
+                   }
             :param service_name: name of current service
        """
         self.config = config
+        if self.config.get("MQ"):
+            self.config = self.config["MQ"]
         self._service_id = self.create_unique_id()
         self.service_name = service_name
         self.consumers = dict()
@@ -89,8 +96,8 @@ class MQConnector(ABC):
         """Returns MQ Credentials object based on username and password in configuration"""
         if not self.config:
             raise Exception('Configuration is not set')
-        return pika.PlainCredentials(self.config['MQ']['users'][self.service_name].get('user', 'guest'),
-                                     self.config['MQ']['users'][self.service_name].get('password', 'guest'))
+        return pika.PlainCredentials(self.config['users'][self.service_name].get('user', 'guest'),
+                                     self.config['users'][self.service_name].get('password', 'guest'))
 
     @staticmethod
     def create_unique_id():
@@ -99,7 +106,7 @@ class MQConnector(ABC):
 
     @classmethod
     def emit_mq_message(cls, connection: pika.BlockingConnection, queue: str, request_data: dict,
-                        exchange: Optional[str]) -> int:
+                        exchange: Optional[str]) -> str:
         """
             Emits request to the neon api service on the MQ bus
 
@@ -133,9 +140,10 @@ class MQConnector(ABC):
             :raises Exception if self.config is not set
         """
         if not self.config:
+            # TODO: Call method in neon_utils?
             raise Exception('Configuration is not set')
-        connection_params = pika.ConnectionParameters(host=self.config['MQ'].get('server', 'localhost'),
-                                                      port=int(self.config['MQ'].get('port', '5672')),
+        connection_params = pika.ConnectionParameters(host=self.config.get('server', 'localhost'),
+                                                      port=int(self.config.get('port', '5672')),
                                                       virtual_host=vhost,
                                                       credentials=self.mq_credentials,
                                                       **kwargs)
