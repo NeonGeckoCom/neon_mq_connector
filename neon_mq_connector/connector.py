@@ -27,6 +27,8 @@ from typing import Optional
 from neon_utils import LOG
 from neon_utils.socket_utils import dict_to_b64
 
+from neon_mq_connector.config import load_neon_mq_config
+
 
 class ConsumerThread(threading.Thread):
     """Rabbit MQ Consumer class that aims at providing unified configurable interface for consumer threads"""
@@ -76,11 +78,12 @@ class MQConnector(ABC):
             :param config: dictionary with current configurations.
                    { "users": {"<service_name>": { "username": "<username>",
                                                    "password": "<password>" },
-                     "server": "api.neon.ai"
+                     "server": "localhost",
+                     "port": 5672
                    }
             :param service_name: name of current service
        """
-        self.config = config
+        self.config = config or load_neon_mq_config()
         if self.config.get("MQ"):
             self.config = self.config["MQ"]
         self._service_id = self.create_unique_id()
@@ -140,7 +143,6 @@ class MQConnector(ABC):
             :raises Exception if self.config is not set
         """
         if not self.config:
-            # TODO: Call method in neon_utils?
             raise Exception('Configuration is not set')
         connection_params = pika.ConnectionParameters(host=self.config.get('server', 'localhost'),
                                                       port=int(self.config.get('port', '5672')),
