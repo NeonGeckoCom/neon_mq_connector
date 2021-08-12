@@ -20,7 +20,7 @@ jobs:
       - name: Get Credential
         run: |
           mkdir -p ~/.local/share/neon
-          echo $CONNECTOR_CONFIG > ~/.local/share/neon/mq_config.json
+          echo $CONNECTOR_CONFIG > ~/.local/share/neon/credentials.json
         shell: bash
         env:
           CONNECTOR_CONFIG: ${{secrets.NEON_MQ_CONNECTOR_CONFIG}}

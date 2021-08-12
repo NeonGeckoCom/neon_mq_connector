@@ -58,8 +58,8 @@ class MQConnectorChild(MQConnector):
 class MQConnectorChildTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        cls.file_path = 'config.json' if os.path.isfile("config.json") else "~/.local/share/neon/mq_config.json"
-        cls.connector_instance = MQConnectorChild(config=Configuration(file_path=cls.file_path).config_data,
+        file_path = 'config.json' if os.path.isfile("config.json") else "~/.local/share/neon/credentials.json"
+        cls.connector_instance = MQConnectorChild(config=Configuration(file_path=file_path).config_data,
                                                   service_name='test')
         cls.connector_instance.run_consumers(names=('test1', 'test2'))
 
