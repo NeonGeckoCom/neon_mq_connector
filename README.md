@@ -33,7 +33,7 @@ Service classes will specify the following parameters.
 
 ###Callback Functions
 A callback function should have the following signature:
-```
+```python
 def handle_api_input(self,
                      channel: pika.channel.Channel,
                      method: pika.spec.Basic.Return,
@@ -48,3 +48,16 @@ def handle_api_input(self,
         :param body: request body (bytes)
     """
 ```
+Generally, `body` should be decoded into a `dict`, and that `dict` should contain `message_id`. The `message_id` should 
+be included in the body of any response to associate the response to the request.
+A response may be sent via:
+```python
+ channel.queue_declare(queue='<queue>')
+
+ channel.basic_publish(exchange='',
+                       routing_key='<queue>',
+                       body=<data>,
+                       properties=pika.BasicProperties(expiration='1000')
+                       )
+```
+Where `<queue>` is the queue to which the response will be published, and `data` is a `bytes` response (generally a `base64`-encoded `dict`).
