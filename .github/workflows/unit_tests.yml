@@ -6,8 +6,6 @@ on:
 jobs:
   unit_tests:
     runs-on: ubuntu-latest
-    env:
-      GITHUB_CI: true
     steps:
       - uses: actions/checkout@v2
       - name: Set up python 3.6
@@ -22,7 +20,7 @@ jobs:
       - name: Get Credential
         run: |
           mkdir -p ~/.local/share/neon
-          echo $NEON_MQ_CONNECTOR_CONFIG > ~/.local/share/neon/credentials.json
+          echo $CONNECTOR_CONFIG > ~/.local/share/neon/credentials.json
         shell: bash
         env:
           CONNECTOR_CONFIG: ${{secrets.NEON_MQ_CONNECTOR_CONFIG}}
