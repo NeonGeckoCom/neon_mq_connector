@@ -7,6 +7,7 @@ on:
       - dev
     paths-ignore:
       - 'version.py'
+  workflow_dispatch:
 
 jobs:
   build_and_publish:
