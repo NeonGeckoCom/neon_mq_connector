@@ -57,8 +57,7 @@ class ConsumerThread(threading.Thread):
         except pika.exceptions.ChannelClosed:
             pass
         except pika.exceptions.StreamLostError as e:
-            if not self._stopping:
-                LOG.error(f'Consuming error: {e}')
+            LOG.error(f'Consuming error: {e}')
         except Exception as x:
             LOG.error(x)
         LOG.debug(f"Consumer Thread stopped: {self.callback_func}")
