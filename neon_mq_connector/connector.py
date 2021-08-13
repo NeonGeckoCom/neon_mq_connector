@@ -30,7 +30,7 @@ from neon_utils.socket_utils import dict_to_b64
 class ConsumerThread(threading.Thread):
     """Rabbit MQ Consumer class that aims at providing unified configurable interface for consumer threads"""
 
-    def __init__(self, connection, queue, callback_func: callable, *args, **kwargs):
+    def __init__(self, connection: pika.BlockingConnection, queue: str, callback_func: callable, *args, **kwargs):
         """
             :param connection: MQ connection object
             :param queue: Desired consuming queue
@@ -41,7 +41,7 @@ class ConsumerThread(threading.Thread):
         self.callback_func = callback_func
         self.queue = queue
         self.channel = self.connection.channel()
-        self.channel.basic_qos(prefetch_count=50)
+        self.channel.basic_qos()  # TODO: Add prefetch_count limit and check message ack DM
         self.channel.queue_declare(queue=self.queue, auto_delete=False)
         self.channel.basic_consume(on_message_callback=self.callback_func,
                                    queue=self.queue,
@@ -52,8 +52,15 @@ class ConsumerThread(threading.Thread):
         super(ConsumerThread, self).run()
         try:
             self.channel.start_consuming()
+        except pika.exceptions.ChannelWrongStateError:
+            LOG.error("Channel not open!")
+        except pika.exceptions.ChannelClosed:
+            pass
         except pika.exceptions.StreamLostError as e:
             LOG.error(f'Consuming error: {e}')
+        except Exception as x:
+            LOG.error(x)
+        LOG.debug(f"Consumer Thread stopped: {self.callback_func}")
 
     def join(self, timeout: Optional[float] = ...) -> None:
         """Terminating consumer channel"""
@@ -61,7 +68,10 @@ class ConsumerThread(threading.Thread):
             self.channel.close()
             self.connection.close()
         except pika.exceptions.StreamLostError as e:
-            LOG.error(f'Consuming error: {e}')
+            pass
+            # LOG.error(f'Consuming error: {e}')
+        except Exception as x:
+            LOG.error(x)
         finally:
             super(ConsumerThread, self).join()
 
