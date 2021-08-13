@@ -41,7 +41,7 @@ class ConsumerThread(threading.Thread):
         self.callback_func = callback_func
         self.queue = queue
         self.channel = self.connection.channel()
-        self.channel.basic_qos()
+        self.channel.basic_qos()  # TODO: Add prefetch_count limit and check message ack DM
         self.channel.queue_declare(queue=self.queue, auto_delete=False)
         self.channel.basic_consume(on_message_callback=self.callback_func,
                                    queue=self.queue,
