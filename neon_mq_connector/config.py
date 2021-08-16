@@ -19,13 +19,44 @@
 
 import os
 import json
+from typing import Optional
+
+
+def load_neon_mq_config():
+    """
+    Locates and loads global MQ configuration
+    """
+    valid_config_paths = (
+        os.path.expanduser("~/.config/neon/mq_config.json"),
+        os.path.expanduser("~/.local/share/neon/credentials.json"),
+    )
+    config = None
+    for conf in valid_config_paths:
+        if os.path.isfile(conf):
+            config = Configuration().from_file(conf).config_data
+            break
+    if not config:
+        return
+    if "MQ" in config.keys():
+        return config["MQ"]
+    else:
+        return config
 
 
 class Configuration:
+    def __init__(self, file_path: Optional[str] = None):
+        self._config_data = dict()
+        if file_path:
+            self.from_file(file_path)
 
-    def __init__(self, file_path: str):
+    def from_file(self, file_path: str):
         with open(os.path.expanduser(file_path)) as input_file:
             self._config_data = json.load(input_file)
+        return self
+
+    def from_dict(self, config_data: dict):
+        self._config_data = config_data
+        return self
 
     @property
     def config_data(self) -> dict:
