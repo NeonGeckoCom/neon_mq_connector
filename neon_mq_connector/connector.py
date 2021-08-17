@@ -39,7 +39,7 @@ class ConsumerThread(threading.Thread):
     """Rabbit MQ Consumer class that aims at providing unified configurable interface for consumer threads"""
 
     def __init__(self, connection_params: pika.ConnectionParameters, queue: str, callback_func: callable,
-                 error_func: callable, *args, **kwargs):
+                 error_func: callable = None, *args, **kwargs):
         """
             :param connection_params: pika connection parameters
             :param queue: Desired consuming queue
