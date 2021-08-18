@@ -1,7 +1,7 @@
 # Neon MQ Connector
 The Neon MQ Connector is an MQ interface for microservices.
 
-##Configuration
+## Configuration
 A global configuration for the MQ Connector may be specified at `~/.config/neon/mq_config.json`. This configuration file 
 may contain the following keys:
  - `server`: The hostname or IP address of the MQ server to connect to. If left blank, this defaults to `"localhost"`
@@ -21,7 +21,7 @@ may contain the following keys:
 }
 ```
 
-##Services
+## Services
 The `MQConnector` class should be extended by a class providing some specific service.
 Service classes will specify the following parameters.
  - `service_name`: Name of the service, used to identify credentials in configuration
@@ -31,7 +31,7 @@ Service classes will specify the following parameters.
    - `queue`: Queue to monitor within the `vhost`. A `vhost` may handle multiple queues.
    - `callback_func`: Function to call when a message arrives in the `queue`
 
-###Callback Functions
+### Callback Functions
 A callback function should have the following signature:
 ```python
 def handle_api_input(self,
