@@ -30,18 +30,32 @@ from neon_utils.socket_utils import dict_to_b64
 from neon_mq_connector.config import load_neon_mq_config
 
 
+def handle_error(thread, exception):
+    # TODO: Depreciate this method DM
+    LOG.error(exception)
+
+
 class ConsumerThread(threading.Thread):
     """Rabbit MQ Consumer class that aims at providing unified configurable interface for consumer threads"""
 
-    def __init__(self, connection: pika.BlockingConnection, queue: str, callback_func: callable, *args, **kwargs):
+    def __init__(self, connection_params: pika.ConnectionParameters, queue: str, callback_func: callable,
+                 error_func: callable = None, *args, **kwargs):
         """
-            :param connection: MQ connection object
+            :param connection_params: pika connection parameters
             :param queue: Desired consuming queue
             :param callback_func: logic on message receiving
+            :param error_func: handler for consumer thread errors
         """
         threading.Thread.__init__(self, *args, **kwargs)
-        self.connection = connection
+
+        if isinstance(connection_params, pika.BlockingConnection):
+            # TODO: Depreciate this check DM
+            LOG.error("Passing a connection object is depreciated, update to pass connection parameters")
+            self.connection = connection_params
+        else:
+            self.connection = pika.BlockingConnection(connection_params)
         self.callback_func = callback_func
+        self.error_func = error_func or handle_error
         self.queue = queue
         self.channel = self.connection.channel()
         self.channel.basic_qos(prefetch_count=50)
@@ -55,24 +69,20 @@ class ConsumerThread(threading.Thread):
         super(ConsumerThread, self).run()
         try:
             self.channel.start_consuming()
-        except pika.exceptions.ChannelWrongStateError:
-            LOG.error("Channel not open!")
         except pika.exceptions.ChannelClosed:
-            pass
-        except pika.exceptions.StreamLostError as e:
-            LOG.error(f'Consuming error: {e}')
-        except Exception as x:
-            LOG.error(x)
-        LOG.debug(f"Consumer Thread stopped: {self.callback_func}")
+            LOG.debug(f"Channel closed by broker: {self.callback_func}")
+        except Exception as e:
+            LOG.error(e)
+            self.error_func(self, e)
 
     def join(self, timeout: Optional[float] = ...) -> None:
         """Terminating consumer channel"""
         try:
-            self.channel.close()
-            self.connection.close()
-        except pika.exceptions.StreamLostError as e:
-            pass
-            # LOG.error(f'Consuming error: {e}')
+            self.channel.stop_consuming()
+            if self.channel.is_open:
+                self.channel.close()
+            if self.connection.is_open:
+                self.connection.close()
         except Exception as x:
             LOG.error(x)
         finally:
@@ -111,6 +121,17 @@ class MQConnector(ABC):
             raise Exception('Configuration is not set')
         return pika.PlainCredentials(self.config['users'][self.service_name].get('user', 'guest'),
                                      self.config['users'][self.service_name].get('password', 'guest'))
+
+    def get_connection_params(self, vhost, **kwargs) -> pika.ConnectionParameters:
+        """
+        Gets connection parameters to be used to create an mq connection
+        """
+        connection_params = pika.ConnectionParameters(host=self.config.get('server', 'localhost'),
+                                                      port=int(self.config.get('port', '5672')),
+                                                      virtual_host=vhost,
+                                                      credentials=self.mq_credentials,
+                                                      **kwargs)
+        return connection_params
 
     @staticmethod
     def create_unique_id():
@@ -154,12 +175,26 @@ class MQConnector(ABC):
         """
         if not self.config:
             raise Exception('Configuration is not set')
-        connection_params = pika.ConnectionParameters(host=self.config.get('server', 'localhost'),
-                                                      port=int(self.config.get('port', '5672')),
-                                                      virtual_host=vhost,
-                                                      credentials=self.mq_credentials,
-                                                      **kwargs)
-        return pika.BlockingConnection(parameters=connection_params)
+        return pika.BlockingConnection(parameters=self.get_connection_params(vhost, **kwargs))
+
+    def register_consumer(self, name: str, vhost: str, queue: str,
+                          callback: callable, on_error: Optional[callable] = None):
+        """
+        Registers a consumer for the specified queue. The callback function will handle items in the queue.
+        Any raised exceptions will be passed as arguments to on_error.
+        :param name: Human readable name of the consumer
+        :param vhost: vhost to register on
+        :param queue: MQ Queue to read messages from
+        :param callback: Method to passed queued messages to
+        :param on_error: Optional method to handle any exceptions raised in message handling
+        """
+        error_handler = on_error or self.default_error_handler
+        self.consumers[name] = ConsumerThread(self.get_connection_params(vhost), queue=queue, callback_func=callback,
+                                              error_func=error_handler)
+
+    @staticmethod
+    def default_error_handler(thread: ConsumerThread, exception: Exception):
+        LOG.error(f"{exception} occurred in {thread}")
 
     def run_consumers(self, names: tuple = (), daemon=True):
         """
