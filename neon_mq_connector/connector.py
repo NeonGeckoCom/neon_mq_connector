@@ -30,16 +30,11 @@ from neon_utils.socket_utils import dict_to_b64
 from neon_mq_connector.config import load_neon_mq_config
 
 
-def handle_error(thread, exception):
-    # TODO: Depreciate this method DM
-    LOG.error(exception)
-
-
 class ConsumerThread(threading.Thread):
     """Rabbit MQ Consumer class that aims at providing unified configurable interface for consumer threads"""
 
     def __init__(self, connection_params: pika.ConnectionParameters, queue: str, callback_func: callable,
-                 error_func: callable = None, *args, **kwargs):
+                 error_func: callable, *args, **kwargs):
         """
             :param connection_params: pika connection parameters
             :param queue: Desired consuming queue
@@ -47,15 +42,9 @@ class ConsumerThread(threading.Thread):
             :param error_func: handler for consumer thread errors
         """
         threading.Thread.__init__(self, *args, **kwargs)
-
-        if isinstance(connection_params, pika.BlockingConnection):
-            # TODO: Depreciate this check DM
-            LOG.error("Passing a connection object is depreciated, update to pass connection parameters")
-            self.connection = connection_params
-        else:
-            self.connection = pika.BlockingConnection(connection_params)
+        self.connection = pika.BlockingConnection(connection_params)
         self.callback_func = callback_func
-        self.error_func = error_func or handle_error
+        self.error_func = error_func
         self.queue = queue
         self.channel = self.connection.channel()
         self.channel.basic_qos(prefetch_count=50)
