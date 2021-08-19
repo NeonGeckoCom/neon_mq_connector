@@ -54,6 +54,8 @@ setup(
     name='neon_mq_connector',
     version=version,
     description='MQ Connector for Neon Modules',
+    long_description=long_description,
+    long_description_content_type="text/markdown",
     url='https://github.com/NeonGeckoCom/neon_mq_connector',
     author='NeonGecko',
     author_email='developers@neon.ai',
