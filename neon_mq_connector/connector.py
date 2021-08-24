@@ -34,12 +34,13 @@ class ConsumerThread(threading.Thread):
     """Rabbit MQ Consumer class that aims at providing unified configurable interface for consumer threads"""
 
     def __init__(self, connection_params: pika.ConnectionParameters, queue: str, callback_func: callable,
-                 error_func: callable, *args, **kwargs):
+                 error_func: callable, auto_ack: bool = True, *args, **kwargs):
         """
             :param connection_params: pika connection parameters
             :param queue: Desired consuming queue
             :param callback_func: logic on message receiving
             :param error_func: handler for consumer thread errors
+            :param auto_ack: Boolean to enable ack of messages upon receipt
         """
         threading.Thread.__init__(self, *args, **kwargs)
         self.connection = pika.BlockingConnection(connection_params)
@@ -51,7 +52,7 @@ class ConsumerThread(threading.Thread):
         self.channel.queue_declare(queue=self.queue, auto_delete=False)
         self.channel.basic_consume(on_message_callback=self.callback_func,
                                    queue=self.queue,
-                                   auto_ack=True)
+                                   auto_ack=auto_ack)
 
     def run(self):
         """Creating consumer channel"""
@@ -167,7 +168,8 @@ class MQConnector(ABC):
         return pika.BlockingConnection(parameters=self.get_connection_params(vhost, **kwargs))
 
     def register_consumer(self, name: str, vhost: str, queue: str,
-                          callback: callable, on_error: Optional[callable] = None):
+                          callback: callable, on_error: Optional[callable] = None,
+                          auto_ack: bool = True):
         """
         Registers a consumer for the specified queue. The callback function will handle items in the queue.
         Any raised exceptions will be passed as arguments to on_error.
@@ -176,10 +178,11 @@ class MQConnector(ABC):
         :param queue: MQ Queue to read messages from
         :param callback: Method to passed queued messages to
         :param on_error: Optional method to handle any exceptions raised in message handling
+        :param auto_ack: Boolean to enable ack of messages upon receipt
         """
         error_handler = on_error or self.default_error_handler
         self.consumers[name] = ConsumerThread(self.get_connection_params(vhost), queue=queue, callback_func=callback,
-                                              error_func=error_handler)
+                                              error_func=error_handler, auto_ack=auto_ack)
 
     @staticmethod
     def default_error_handler(thread: ConsumerThread, exception: Exception):

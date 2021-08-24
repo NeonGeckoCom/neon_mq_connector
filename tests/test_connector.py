@@ -38,6 +38,10 @@ class MQConnectorChild(MQConnector):
 
     def callback_func_2(self, channel, method, properties, body):
         self.func_2_ok = True
+        # channel.basic_ack(delivery_tag=method.delivery_tag)
+
+    def callback_func_after_message(self, channel, method, properties, body):
+        self.callback_ok = True
         channel.basic_ack(delivery_tag=method.delivery_tag)
 
     def callback_func_error(self, channel, method, properties, body):
@@ -51,19 +55,12 @@ class MQConnectorChild(MQConnector):
         self.vhost = '/test'
         self.func_1_ok = False
         self.func_2_ok = False
+        self.callback_ok = False
         self.exception = None
         self.connection = self.create_mq_connection(vhost=self.vhost)
-        self.consumers = dict(test1=ConsumerThread(connection_params=self.get_connection_params(vhost=self.vhost),
-                                                   queue='test',
-                                                   callback_func=self.callback_func_1),
-                              test2=ConsumerThread(connection_params=self.get_connection_params(vhost=self.vhost),
-                                                   queue='test1',
-                                                   callback_func=self.callback_func_2),
-                              error=ConsumerThread(connection_params=self.get_connection_params(vhost=self.vhost),
-                                                   queue='error',
-                                                   callback_func=self.callback_func_error,
-                                                   error_func=self.handle_error)
-                              )
+        self.register_consumer("test1", self.vhost, 'test', self.callback_func_1, auto_ack=False)
+        self.register_consumer("test2", self.vhost, 'test1', self.callback_func_2, auto_ack=False)
+        self.register_consumer("error", self.vhost, "error", self.callback_func_error, self.handle_error, True)
 
 
 class MQConnectorChildTest(unittest.TestCase):
@@ -128,3 +125,20 @@ class MQConnectorChildTest(unittest.TestCase):
         time.sleep(3)
         self.assertIsInstance(self.connector_instance.exception, Exception)
         self.assertEqual(str(self.connector_instance.exception), "Exception to Handle")
+
+    def test_consumer_after_message(self):
+        self.channel = self.connector_instance.connection.channel()
+        self.channel.basic_publish(exchange='',
+                                   routing_key='test3',
+                                   body='test',
+                                   properties=pika.BasicProperties(
+                                       expiration='3000'
+                                   ))
+        self.channel.close()
+
+        self.connector_instance.register_consumer("test_consumer_after_message",
+                                                  self.connector_instance.vhost, "test3",
+                                                  self.connector_instance.callback_func_after_message, auto_ack=False)
+        self.connector_instance.run_consumers(("test_consumer_after_message",))
+        time.sleep(3)
+        self.assertTrue(self.connector_instance.callback_ok)
