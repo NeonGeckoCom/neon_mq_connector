@@ -246,7 +246,7 @@ class MQConnector(ABC):
 
     def run(self, retries_made: int = 0):
         """Generic method called on running the instance"""
-        if retries_made < self.Addconsumer_retries:
+        if retries_made < self.consumer_retries:
             try:
                 self.run_consumers()
                 self.sync_thread.start()
