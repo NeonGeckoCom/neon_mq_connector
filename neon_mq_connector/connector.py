@@ -16,7 +16,7 @@
 # Specialized conversational reconveyance options from Conversation Processing Intelligence Corp.
 # US Patents 2008-2021: US7424516, US20140161250, US20140177813, US8638908, US8068604, US8553852, US10530923, US10530924
 # China Patent: CN102017585  -  Europe Patent: EU2156652  -  Patents Pending
-
+import time
 import uuid
 import pika
 import pika.exceptions
@@ -27,8 +27,8 @@ from typing import Optional
 from neon_utils import LOG
 from neon_utils.socket_utils import dict_to_b64
 
-from neon_mq_connector.config import load_neon_mq_config
-
+from .config import load_neon_mq_config
+from .utils import RepeatingTimer, get_timeout
 
 class ConsumerThread(threading.Thread):
     """Rabbit MQ Consumer class that aims at providing unified configurable interface for consumer threads"""
@@ -86,11 +86,14 @@ class MQConnector(ABC):
     def __init__(self, config: dict, service_name: str):
         """
             :param config: dictionary with current configurations.
-                   { "users": {"<service_name>": { "username": "<username>",
-                                                   "password": "<password>" },
-                     "server": "localhost",
-                     "port": 5672
-                   }
+            ``` JSON Template of configuration:
+
+                     { "users": {"<service_name>": { "username": "<username>",
+                                                     "password": "<password>" },
+                       "server": "localhost",
+                       "port": 5672
+                     }
+            ```
             :param service_name: name of current service
        """
         self.config = config or load_neon_mq_config()
@@ -99,9 +102,16 @@ class MQConnector(ABC):
         self._service_id = self.create_unique_id()
         self.service_name = service_name
         self.consumers = dict()
+        self.consumer_retries = 3
+        self.sync_period = 10  # in seconds
+        self.backoff_factor = 5
+        self.vhost = '/'
+        self._sync_thread = RepeatingTimer(self.sync_period, self.sync)
+        self.run_abort_event = None
 
     @property
     def service_id(self):
+        """ID of the service should be considered to be unique"""
         return self._service_id
 
     @property
@@ -130,7 +140,7 @@ class MQConnector(ABC):
 
     @classmethod
     def emit_mq_message(cls, connection: pika.BlockingConnection, queue: str, request_data: dict,
-                        exchange: Optional[str]) -> str:
+                        exchange: Optional[str], expiration: int = 1000) -> str:
         """
             Emits request to the neon api service on the MQ bus
 
@@ -138,6 +148,7 @@ class MQConnector(ABC):
             :param queue: name of the queue to publish in
             :param request_data: dictionary with the request data
             :param exchange: name of the exchange (optional)
+            :param expiration: mq message expiration time (in millis, defaults to 1 second)
 
             :raises ValueError: invalid request data provided
             :returns message_id: id of the sent message
@@ -149,7 +160,7 @@ class MQConnector(ABC):
             channel.basic_publish(exchange=exchange or '',
                                   routing_key=queue,
                                   body=dict_to_b64(request_data),
-                                  properties=pika.BasicProperties(expiration='1000'))
+                                  properties=pika.BasicProperties(expiration=str(expiration)))
             channel.close()
             return message_id
         else:
@@ -182,7 +193,7 @@ class MQConnector(ABC):
         """
         error_handler = on_error or self.default_error_handler
         self.consumers[name] = ConsumerThread(self.get_connection_params(vhost), queue=queue, callback_func=callback,
-                                              error_func=error_handler, auto_ack=auto_ack)
+                                              error_func=error_handler, auto_ack=auto_ack, name=name)
 
     @staticmethod
     def default_error_handler(thread: ConsumerThread, exception: Exception):
@@ -198,7 +209,7 @@ class MQConnector(ABC):
         if not names or len(names) == 0:
             names = list(self.consumers)
         for name in names:
-            if name in list(self.consumers):
+            if name in list(self.consumers) and not self.consumers[name].is_alive():
                 self.consumers[name].daemon = daemon
                 self.consumers[name].start()
 
@@ -214,3 +225,60 @@ class MQConnector(ABC):
                     self.consumers[name].join()
             except Exception as e:
                 raise ChildProcessError(e)
+
+    def sync(self, vhost: str = None, exchange: str = None, queue: str = None, request_data: dict = None):
+        """
+            Periodical notification message to be sent into MQ
+
+            :param vhost: mq virtual host (defaults to self.vhost)
+            :param exchange: mq exchange (defaults to base one)
+            :param queue: message queue prefix (defaults to self.service_name)
+            :param request_data: data to publish in sync
+        """
+        vhost = vhost or self.vhost
+        queue = f'{queue or self.service_name}_sync'
+        exchange = exchange or ''
+        request_data = request_data or {'service_id': self.service_id, 'time': int(time.time())}
+
+        with self.create_mq_connection(vhost=vhost) as mq_connection:
+            LOG.info(f'Emitting sync message to (vhost="{vhost}", exchange="{exchange}", queue="{queue}")')
+            self.emit_mq_message(mq_connection, queue=queue, exchange=exchange, request_data=dict_to_b64(request_data))
+
+    def run(self, retries_made: int = 0):
+        """Generic method called on running the instance"""
+        if retries_made < self.Addconsumer_retries:
+            try:
+                self.run_consumers()
+                self.sync_thread.start()
+                self.with_run()
+            except Exception as ex:
+                self.stop()
+                time.sleep(get_timeout(backoff_factor=self.backoff_factor, number_of_retries=retries_made))
+                retries_made += 1
+                LOG.error(f'Connection received interrupt due to exception {ex},'
+                          f' reconnecting attempt #{retries_made}')
+                self.run(retries_made=retries_made+1)
+        else:
+            LOG.error(f'Stopping service "{self.service_name}" ({self.service_id}) due to exceeded number of retries')
+
+    @property
+    def sync_thread(self):
+        """Creates new Repeating Timer if none is present"""
+        if not self._sync_thread:
+            self._sync_thread = RepeatingTimer(self.sync_period, self.sync)
+        return self._sync_thread
+
+    def stop_sync_thread(self):
+        """Stops Repeating Timer and dereferences it"""
+        if self._sync_thread:
+            self._sync_thread.cancel()
+            self._sync_thread = None
+
+    def stop(self):
+        """Generic method for graceful instance stopping"""
+        self.stop_consumers()
+        self.stop_sync_thread()
+
+    def with_run(self):
+        """Contains supportive logic during instance running"""
+        pass

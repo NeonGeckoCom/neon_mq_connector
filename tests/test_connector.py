@@ -57,10 +57,12 @@ class MQConnectorChild(MQConnector):
         self.func_2_ok = False
         self.callback_ok = False
         self.exception = None
-        self.connection = self.create_mq_connection(vhost=self.vhost)
-        self.register_consumer("test1", self.vhost, 'test', self.callback_func_1, auto_ack=False)
-        self.register_consumer("test2", self.vhost, 'test1', self.callback_func_2, auto_ack=False)
-        self.register_consumer("error", self.vhost, "error", self.callback_func_error, self.handle_error, True)
+        self.register_consumer(name="test1", vhost=self.vhost, queue='test', callback=self.callback_func_1,
+                               auto_ack=True)
+        self.register_consumer(name="test2", vhost=self.vhost, queue='test1', callback=self.callback_func_2,
+                               auto_ack=True)
+        self.register_consumer(name="error", vhost=self.vhost, queue="error", callback=self.callback_func_error,
+                               on_error=self.handle_error, auto_ack=True)
 
 
 class MQConnectorChildTest(unittest.TestCase):
@@ -69,18 +71,14 @@ class MQConnectorChildTest(unittest.TestCase):
         file_path = 'config.json' if os.path.isfile("config.json") else "~/.local/share/neon/credentials.json"
         cls.connector_instance = MQConnectorChild(config=Configuration(file_path=file_path).config_data,
                                                   service_name='test')
-        cls.connector_instance.run_consumers(names=('test1', 'test2', 'error'))
+        cls.connector_instance.run()
 
     @classmethod
     def tearDownClass(cls) -> None:
         try:
-            cls.connector_instance.stop_consumers(names=('test1', 'test2', 'error'))
+            cls.connector_instance.stop()
         except ChildProcessError as e:
             LOG.error(e)
-        try:
-            cls.connector_instance.connection.close()
-        except pika.exceptions.StreamLostError as e:
-            LOG.error(f'Consuming error: {e}')
 
     def test_not_null_service_id(self):
         self.assertIsNotNone(self.connector_instance.service_id)
@@ -91,21 +89,17 @@ class MQConnectorChildTest(unittest.TestCase):
 
     @pytest.mark.timeout(30)
     def test_produce(self):
-        self.channel = self.connector_instance.connection.channel()
-        self.channel.basic_publish(exchange='',
-                                   routing_key='test',
-                                   body='Hello!',
-                                   properties=pika.BasicProperties(
-                                       expiration='3000',
-                                   ))
-
-        self.channel.basic_publish(exchange='',
-                                   routing_key='test1',
-                                   body='Hello 2!',
-                                   properties=pika.BasicProperties(
-                                       expiration='3000',
-                                   ))
-        self.channel.close()
+        with self.connector_instance.create_mq_connection(vhost=self.connector_instance.vhost) as mq_conn:
+            self.connector_instance.emit_mq_message(mq_conn,
+                                                    queue='test',
+                                                    request_data={'data': 'Hello!'},
+                                                    exchange='',
+                                                    expiration=4000)
+            self.connector_instance.emit_mq_message(mq_conn,
+                                                    queue='test1',
+                                                    request_data={'data': 'Hello 2!'},
+                                                    exchange='',
+                                                    expiration=4000)
 
         time.sleep(3)
         self.assertTrue(self.connector_instance.func_1_ok)
@@ -113,28 +107,24 @@ class MQConnectorChildTest(unittest.TestCase):
 
     @pytest.mark.timeout(30)
     def test_error(self):
-        self.channel = self.connector_instance.connection.channel()
-        self.channel.basic_publish(exchange='',
-                                   routing_key='error',
-                                   body='test',
-                                   properties=pika.BasicProperties(
-                                       expiration='3000'
-                                   ))
-        self.channel.close()
+        with self.connector_instance.create_mq_connection(vhost=self.connector_instance.vhost) as mq_conn:
+            self.connector_instance.emit_mq_message(mq_conn,
+                                                    queue='error',
+                                                    request_data={'data': 'test'},
+                                                    exchange='',
+                                                    expiration=4000)
 
         time.sleep(3)
         self.assertIsInstance(self.connector_instance.exception, Exception)
         self.assertEqual(str(self.connector_instance.exception), "Exception to Handle")
 
     def test_consumer_after_message(self):
-        self.channel = self.connector_instance.connection.channel()
-        self.channel.basic_publish(exchange='',
-                                   routing_key='test3',
-                                   body='test',
-                                   properties=pika.BasicProperties(
-                                       expiration='3000'
-                                   ))
-        self.channel.close()
+        with self.connector_instance.create_mq_connection(vhost=self.connector_instance.vhost) as mq_conn:
+            self.connector_instance.emit_mq_message(mq_conn,
+                                                    queue='test3',
+                                                    request_data={'data':'test'},
+                                                    exchange='',
+                                                    expiration=3000)
 
         self.connector_instance.register_consumer("test_consumer_after_message",
                                                   self.connector_instance.vhost, "test3",
