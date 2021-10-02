@@ -102,12 +102,9 @@ class MQConnector(ABC):
         self._service_id = self.create_unique_id()
         self.service_name = service_name
         self.consumers = dict()
-        self.num_retries = 3
         self.sync_period = 10  # in seconds
-        self.backoff_factor = 5
         self.vhost = '/'
-        self._sync_thread = RepeatingTimer(self.sync_period, self.sync)
-        self.run_abort_event = None
+        self._sync_thread = None
 
     @property
     def service_id(self):
@@ -252,8 +249,7 @@ class MQConnector(ABC):
             self.with_run()
         except Exception as ex:
             self.stop()
-            LOG.error(f'Connection received interrupt due to exception {ex},'
-                      f' reconnecting attempt #{retries_made}')
+            LOG.error(f'Connection received interrupt due to exception {ex}')
 
     @property
     def sync_thread(self):
@@ -274,5 +270,5 @@ class MQConnector(ABC):
         self.stop_sync_thread()
 
     def with_run(self):
-        """Contains supportive logic during instance running"""
+        """Contains additional logic during instance running"""
         pass
