@@ -18,4 +18,4 @@
 # China Patent: CN102017585  -  Europe Patent: EU2156652  -  Patents Pending
 
 from .thread_utils import RepeatingTimer
-from .connection_utils import get_timeout
+from .connection_utils import retry

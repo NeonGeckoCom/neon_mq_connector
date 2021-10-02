@@ -58,11 +58,11 @@ class MQConnectorChild(MQConnector):
         self.callback_ok = False
         self.exception = None
         self.register_consumer(name="test1", vhost=self.vhost, queue='test', callback=self.callback_func_1,
-                               auto_ack=True)
+                               auto_ack=False)
         self.register_consumer(name="test2", vhost=self.vhost, queue='test1', callback=self.callback_func_2,
-                               auto_ack=True)
+                               auto_ack=False)
         self.register_consumer(name="error", vhost=self.vhost, queue="error", callback=self.callback_func_error,
-                               on_error=self.handle_error, auto_ack=True)
+                               on_error=self.handle_error, auto_ack=False)
 
 
 class MQConnectorChildTest(unittest.TestCase):

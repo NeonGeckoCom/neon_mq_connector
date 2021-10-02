@@ -28,7 +28,7 @@ from neon_utils import LOG
 from neon_utils.socket_utils import dict_to_b64
 
 from .config import load_neon_mq_config
-from .utils import RepeatingTimer, get_timeout
+from .utils import RepeatingTimer, retry
 
 class ConsumerThread(threading.Thread):
     """Rabbit MQ Consumer class that aims at providing unified configurable interface for consumer threads"""
@@ -102,7 +102,7 @@ class MQConnector(ABC):
         self._service_id = self.create_unique_id()
         self.service_name = service_name
         self.consumers = dict()
-        self.consumer_retries = 3
+        self.num_retries = 3
         self.sync_period = 10  # in seconds
         self.backoff_factor = 5
         self.vhost = '/'
@@ -244,22 +244,16 @@ class MQConnector(ABC):
             LOG.info(f'Emitting sync message to (vhost="{vhost}", exchange="{exchange}", queue="{queue}")')
             self.emit_mq_message(mq_connection, queue=queue, exchange=exchange, request_data=dict_to_b64(request_data))
 
-    def run(self, retries_made: int = 0):
+    def run(self):
         """Generic method called on running the instance"""
-        if retries_made < self.consumer_retries:
-            try:
-                self.run_consumers()
-                self.sync_thread.start()
-                self.with_run()
-            except Exception as ex:
-                self.stop()
-                time.sleep(get_timeout(backoff_factor=self.backoff_factor, number_of_retries=retries_made))
-                retries_made += 1
-                LOG.error(f'Connection received interrupt due to exception {ex},'
-                          f' reconnecting attempt #{retries_made}')
-                self.run(retries_made=retries_made+1)
-        else:
-            LOG.error(f'Stopping service "{self.service_name}" ({self.service_id}) due to exceeded number of retries')
+        try:
+            self.run_consumers()
+            self.sync_thread.start()
+            self.with_run()
+        except Exception as ex:
+            self.stop()
+            LOG.error(f'Connection received interrupt due to exception {ex},'
+                      f' reconnecting attempt #{retries_made}')
 
     @property
     def sync_thread(self):
