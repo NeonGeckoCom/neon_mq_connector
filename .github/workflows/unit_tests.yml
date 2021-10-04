@@ -29,4 +29,9 @@ jobs:
           CONNECTOR_CONFIG: ${{secrets.NEON_MQ_CONNECTOR_CONFIG}}
       - name: Run Unit Tests
         run: |
-          python -m unittest
+          pytest tests/test_connector.py --doctest-modules --junitxml=tests/connector-test-results.xml
+      - name: Upload Connector test results
+        uses: actions/upload-artifact@v2
+        with:
+          name: connector-test-results
+          path: tests/connector-test-results.xml
