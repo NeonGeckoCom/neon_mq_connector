@@ -24,7 +24,7 @@ import unittest
 import pytest
 import pika
 
-sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from neon_mq_connector.config import Configuration
 from neon_mq_connector.connector import MQConnector, ConsumerThread
 from neon_utils import LOG
