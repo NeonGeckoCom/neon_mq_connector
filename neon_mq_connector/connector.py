@@ -30,6 +30,7 @@ from neon_utils.socket_utils import dict_to_b64
 from .config import load_neon_mq_config
 from .utils import RepeatingTimer, retry
 
+
 class ConsumerThread(threading.Thread):
     """Rabbit MQ Consumer class that aims at providing unified configurable interface for consumer threads"""
 
@@ -225,7 +226,8 @@ class MQConnector(ABC):
 
     def sync(self, vhost: str = None, exchange: str = None, queue: str = None, request_data: dict = None):
         """
-            Periodical notification message to be sent into MQ
+            Periodical notification message to be sent into MQ,
+            used to notify other network listeners about this service health status
 
             :param vhost: mq virtual host (defaults to self.vhost)
             :param exchange: mq exchange (defaults to base one)
@@ -241,12 +243,20 @@ class MQConnector(ABC):
             LOG.info(f'Emitting sync message to (vhost="{vhost}", exchange="{exchange}", queue="{queue}")')
             self.emit_mq_message(mq_connection, queue=queue, exchange=exchange, request_data=dict_to_b64(request_data))
 
-    def run(self):
-        """Generic method called on running the instance"""
+    def run(self, run_consumers: bool = True, run_sync: bool = True, **kwargs):
+        """
+            Generic method called on running the instance
+
+            :param run_consumers: to run this instance consumers (defaults to True)
+            :param run_sync: to run synchronization thread (defaults to True)
+        """
         try:
-            self.run_consumers()
-            self.sync_thread.start()
-            self.with_run()
+            self.pre_run(**kwargs)
+            if run_consumers:
+                self.run_consumers()
+            if run_sync:
+                self.sync_thread.start()
+            self.post_run(**kwargs)
         except Exception as ex:
             self.stop()
             LOG.error(f'Connection received interrupt due to exception {ex}')
@@ -269,6 +279,10 @@ class MQConnector(ABC):
         self.stop_consumers()
         self.stop_sync_thread()
 
-    def with_run(self):
-        """Contains additional logic during instance running"""
+    def pre_run(self, **kwargs):
+        """Additional logic invoked before method run()"""
+        pass
+
+    def post_run(self, **kwargs):
+        """Additional logic invoked after method run()"""
         pass

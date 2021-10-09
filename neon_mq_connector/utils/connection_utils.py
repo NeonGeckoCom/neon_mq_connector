@@ -26,6 +26,9 @@ def get_timeout(backoff_factor: float, number_of_retries: int) -> float:
     """
         Gets timeout based on backoff_factor
 
+        :param backoff_factor: value of backoff factor
+        :param number_of_retries: current number of retries made
+
         Examples:
             >>> __backoff_factor, __number_of_retries = 0.1, 1
             >>> timeout = get_timeout(__backoff_factor, __number_of_retries)
