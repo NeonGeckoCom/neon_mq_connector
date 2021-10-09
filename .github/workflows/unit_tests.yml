@@ -27,7 +27,15 @@ jobs:
         shell: bash
         env:
           CONNECTOR_CONFIG: ${{secrets.NEON_MQ_CONNECTOR_CONFIG}}
-      - name: Run Unit Tests
+      - name: Run Utils Tests
+        run: |
+          pytest tests/test_utils.py --doctest-modules --junitxml=tests/utils-test-results.xml
+      - name: Upload Utils test results
+        uses: actions/upload-artifact@v2
+        with:
+          name: utils-test-results
+          path: tests/utils-test-results.xml
+      - name: Run Connector Tests
         run: |
           pytest tests/test_connector.py --doctest-modules --junitxml=tests/connector-test-results.xml
       - name: Upload Connector test results
