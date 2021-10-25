@@ -251,9 +251,12 @@ class MQConnector(ABC):
             :param run_sync: to run synchronization thread (defaults to True)
         """
         try:
+            kwargs.setdefault('consumer_names', ())
+            kwargs.setdefault('daemonize_consumers', False)
             self.pre_run(**kwargs)
             if run_consumers:
-                self.run_consumers()
+                self.run_consumers(names=kwargs['consumer_names'],
+                                   daemon=kwargs['daemonize_consumers'])
             if run_sync:
                 self.sync_thread.start()
             self.post_run(**kwargs)
