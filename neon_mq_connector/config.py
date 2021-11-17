@@ -30,7 +30,7 @@ def load_neon_mq_config():
     ~/.local/share/neon/credentials.json
     """
     valid_config_paths = (
-        os.path.expanduser(os.environ.get('NEON_MQ_CONFIG_PATH')),
+        os.path.expanduser(os.environ.get('NEON_MQ_CONFIG_PATH', "")),
         os.path.join(os.path.expanduser(os.environ.get("NEON_CONFIG_PATH", "~/.config/neon")), "mq_config.json"),
         os.path.expanduser("~/.local/share/neon/credentials.json")
     )
