@@ -27,12 +27,13 @@ def load_neon_mq_config():
     Locates and loads global MQ configuration
     """
     valid_config_paths = (
+        os.environ.get('NEON_MQ_CONFIG_PATH'),
         os.path.expanduser("~/.config/neon/mq_config.json"),
         os.path.expanduser("~/.local/share/neon/credentials.json"),
     )
     config = None
     for conf in valid_config_paths:
-        if os.path.isfile(conf):
+        if conf and os.path.isfile(conf):
             config = Configuration().from_file(conf).config_data
             break
     if not config:

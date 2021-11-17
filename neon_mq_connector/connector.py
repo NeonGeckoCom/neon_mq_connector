@@ -84,7 +84,7 @@ class MQConnector(ABC):
     """Abstract method for attaching services to MQ cluster"""
 
     @abstractmethod
-    def __init__(self, config: dict, service_name: str):
+    def __init__(self, config: Optional[dict], service_name: str):
         """
             :param config: dictionary with current configurations.
             ``` JSON Template of configuration:
