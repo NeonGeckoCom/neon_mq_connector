@@ -20,6 +20,7 @@ import time
 from typing import Union, Callable
 
 from neon_utils import LOG
+from neon_utils.net_utils import check_port_is_open
 
 
 def get_timeout(backoff_factor: float, number_of_retries: int) -> float:
@@ -97,3 +98,17 @@ def retry(callback_on_exceeded: Union[str, Callable] = None, callback_on_attempt
         return wrapper
     return decorator
 
+
+def wait_for_mq_startup(addr: str, port: int, timeout: int = 60) -> bool:
+    """
+    Wait up to `timeout` seconds for the MQ connection at `addr`:`port` to come online.
+    :param addr: URL or IP address to monitor
+    :param port: MQ port to query
+    :param timeout: Max seconds to wait for connection to come online
+    """
+    stop_time = time.time() + timeout
+    while not check_port_is_open(addr, port):
+        LOG.debug("Waiting for MQ server to come online")
+        if time.time() > stop_time:
+            return False
+    return True

@@ -28,12 +28,12 @@ from neon_utils import LOG
 from neon_utils.socket_utils import dict_to_b64
 
 from .config import load_neon_mq_config
-from .utils import RepeatingTimer, retry
+from .utils import RepeatingTimer, retry, wait_for_mq_startup
 
 
 class ConsumerThread(threading.Thread):
     """Rabbit MQ Consumer class that aims at providing unified configurable interface for consumer threads"""
-
+    @retry(use_self=True)  # Handle connection failures in case MQ server is still starting up
     def __init__(self, connection_params: pika.ConnectionParameters, queue: str, callback_func: callable,
                  error_func: callable, auto_ack: bool = True, *args, **kwargs):
         """
@@ -251,6 +251,9 @@ class MQConnector(ABC):
             :param run_sync: to run synchronization thread (defaults to True)
         """
         try:
+            host = self.config.get('server', 'localhost')
+            port = int(self.config.get('port', '5672'))
+            wait_for_mq_startup(host, port)
             kwargs.setdefault('consumer_names', ())
             kwargs.setdefault('daemonize_consumers', False)
             self.pre_run(**kwargs)
