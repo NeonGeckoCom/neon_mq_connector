@@ -26,7 +26,7 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from neon_mq_connector.utils import RepeatingTimer
-from neon_mq_connector.utils.connection_utils import get_timeout, retry
+from neon_mq_connector.utils.connection_utils import get_timeout, retry, wait_for_mq_startup
 
 
 def callback_on_failure():
@@ -85,6 +85,10 @@ class TestMQConnectorUtils(unittest.TestCase):
         time.sleep(interval_timeout)
         timer_thread.cancel()
         self.assertEqual(self.counter, 3)
+
+    def test_wait_for_mq_startup(self):
+        self.assertTrue(wait_for_mq_startup("api.neon.ai", 5672))
+        self.assertFalse(wait_for_mq_startup("api.neon.ai", 443, 1))
 
     def setUp(self) -> None:
         self.counter = 0
