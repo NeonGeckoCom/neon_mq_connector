@@ -24,15 +24,19 @@ from typing import Optional
 
 def load_neon_mq_config():
     """
-    Locates and loads global MQ configuration
+    Locates and loads global MQ configuration. Priority is as follows:
+    NEON_MQ_CONFIG_PATH environment variable
+    {NEON_CONFIG_PATH}/mq_config.json
+    ~/.local/share/neon/credentials.json
     """
     valid_config_paths = (
-        os.path.expanduser("~/.config/neon/mq_config.json"),
-        os.path.expanduser("~/.local/share/neon/credentials.json"),
+        os.path.expanduser(os.environ.get('NEON_MQ_CONFIG_PATH', "")),
+        os.path.join(os.path.expanduser(os.environ.get("NEON_CONFIG_PATH", "~/.config/neon")), "mq_config.json"),
+        os.path.expanduser("~/.local/share/neon/credentials.json")
     )
     config = None
     for conf in valid_config_paths:
-        if os.path.isfile(conf):
+        if conf and os.path.isfile(conf):
             config = Configuration().from_file(conf).config_data
             break
     if not config:
