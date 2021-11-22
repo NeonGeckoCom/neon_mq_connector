@@ -1,3 +1,2 @@
 pika==1.2.0
-# TODO: update to non-alpha version
-neon_utils~=0.12.7a1
+neon_utils~=0.13
