@@ -68,7 +68,7 @@ setup(
     url='https://github.com/NeonGeckoCom/neon_mq_connector',
     author='NeonGecko',
     author_email='developers@neon.ai',
-    license='NeonAI License v1.0',
+    license='BSD-3-Clause',
     packages=find_packages(),
     install_requires=get_requirements("requirements.txt"),
     zip_safe=True,
