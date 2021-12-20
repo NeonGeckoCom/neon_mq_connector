@@ -34,6 +34,8 @@ import threading
 
 from abc import ABC, abstractmethod
 from typing import Optional
+
+from pika.exchange_type import ExchangeType
 from neon_utils import LOG
 from neon_utils.socket_utils import dict_to_b64
 
@@ -42,25 +44,37 @@ from .utils import RepeatingTimer, retry, wait_for_mq_startup
 
 
 class ConsumerThread(threading.Thread):
+
     """Rabbit MQ Consumer class that aims at providing unified configurable interface for consumer threads"""
     @retry(use_self=True)  # Handle connection failures in case MQ server is still starting up
     def __init__(self, connection_params: pika.ConnectionParameters, queue: str, callback_func: callable,
-                 error_func: callable, auto_ack: bool = True, *args, **kwargs):
+                 error_func: callable, auto_ack: bool = True, exchange: str=None,
+                 exchange_type: str = ExchangeType.direct, *args, **kwargs):
         """
             :param connection_params: pika connection parameters
             :param queue: Desired consuming queue
             :param callback_func: logic on message receiving
             :param error_func: handler for consumer thread errors
             :param auto_ack: Boolean to enable ack of messages upon receipt
+            :param exchange: exchange to bind queue to (optional)
+            :param exchange_type: type of exchange to bind to from ExchangeType (defaults to direct)
         """
         threading.Thread.__init__(self, *args, **kwargs)
         self.connection = pika.BlockingConnection(connection_params)
         self.callback_func = callback_func
         self.error_func = error_func
+        self.exchange = exchange
+        self.exchange_type = exchange_type
         self.queue = queue
         self.channel = self.connection.channel()
         self.channel.basic_qos(prefetch_count=50)
-        self.channel.queue_declare(queue=self.queue, auto_delete=False)
+        declared_queue = self.channel.queue_declare(queue=self.queue, auto_delete=False)
+        if self.exchange:
+            self.channel.exchange_declare(exchange=self.exchange,
+                                          exchange_type=self.exchange_type,
+                                          durable=True,
+                                          arguments={'pika_version': pika.__version__})
+            self.channel.queue_bind(queue=declared_queue.method.queue, exchange=self.exchange, routing_key=self.queue)
         self.channel.basic_consume(on_message_callback=self.callback_func,
                                    queue=self.queue,
                                    auto_ack=auto_ack)
@@ -148,7 +162,8 @@ class MQConnector(ABC):
 
     @classmethod
     def emit_mq_message(cls, connection: pika.BlockingConnection, queue: str, request_data: dict,
-                        exchange: Optional[str], expiration: int = 1000) -> str:
+                        exchange: Optional[str],
+                        exchange_type: Optional[str] = ExchangeType.direct, expiration: int = 1000) -> str:
         """
             Emits request to the neon api service on the MQ bus
 
@@ -156,6 +171,7 @@ class MQConnector(ABC):
             :param queue: name of the queue to publish in
             :param request_data: dictionary with the request data
             :param exchange: name of the exchange (optional)
+            :param exchange_type: type of exchange to declare (defaults to direct)
             :param expiration: mq message expiration time (in millis, defaults to 1 second)
 
             :raises ValueError: invalid request data provided
@@ -165,6 +181,14 @@ class MQConnector(ABC):
             message_id = cls.create_unique_id()
             request_data['message_id'] = message_id
             channel = connection.channel()
+            declared_queue = channel.queue_declare(queue, durable=True, auto_delete=False)
+            if exchange:
+                channel.exchange_declare(exchange=exchange,
+                                         exchange_type=exchange_type, durable=True,
+                                         arguments={'pika_version': pika.__version__})
+                channel.queue_bind(queue=declared_queue.method.queue,
+                                   exchange=exchange,
+                                   routing_key=queue)
             channel.basic_publish(exchange=exchange or '',
                                   routing_key=queue,
                                   body=dict_to_b64(request_data),
@@ -188,6 +212,7 @@ class MQConnector(ABC):
 
     def register_consumer(self, name: str, vhost: str, queue: str,
                           callback: callable, on_error: Optional[callable] = None,
+                          exchange: str = None, exchange_type: str = None,
                           auto_ack: bool = True):
         """
         Registers a consumer for the specified queue. The callback function will handle items in the queue.
@@ -195,12 +220,15 @@ class MQConnector(ABC):
         :param name: Human readable name of the consumer
         :param vhost: vhost to register on
         :param queue: MQ Queue to read messages from
+        :param exchange: MQ Exchange to bind to
+        :param exchange_type: Type of MQ Exchange to use
         :param callback: Method to passed queued messages to
         :param on_error: Optional method to handle any exceptions raised in message handling
         :param auto_ack: Boolean to enable ack of messages upon receipt
         """
         error_handler = on_error or self.default_error_handler
         self.consumers[name] = ConsumerThread(self.get_connection_params(vhost), queue=queue, callback_func=callback,
+                                              exchange=exchange, exchange_type=exchange_type,
                                               error_func=error_handler, auto_ack=auto_ack, name=name)
 
     @staticmethod
