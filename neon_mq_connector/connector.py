@@ -72,7 +72,6 @@ class ConsumerThread(threading.Thread):
         if self.exchange:
             self.channel.exchange_declare(exchange=self.exchange,
                                           exchange_type=self.exchange_type,
-                                          durable=True,
                                           arguments={'pika_version': pika.__version__})
             self.channel.queue_bind(queue=declared_queue.method.queue, exchange=self.exchange, routing_key=self.queue)
         self.channel.basic_consume(on_message_callback=self.callback_func,
@@ -181,10 +180,10 @@ class MQConnector(ABC):
             message_id = cls.create_unique_id()
             request_data['message_id'] = message_id
             channel = connection.channel()
-            declared_queue = channel.queue_declare(queue, durable=True, auto_delete=False)
+            declared_queue = channel.queue_declare(queue, auto_delete=False)
             if exchange:
                 channel.exchange_declare(exchange=exchange,
-                                         exchange_type=exchange_type, durable=True,
+                                         exchange_type=exchange_type,
                                          arguments={'pika_version': pika.__version__})
                 channel.queue_bind(queue=declared_queue.method.queue,
                                    exchange=exchange,
