@@ -48,7 +48,8 @@ class ConsumerThread(threading.Thread):
     """Rabbit MQ Consumer class that aims at providing unified configurable interface for consumer threads"""
     @retry(use_self=True)  # Handle connection failures in case MQ server is still starting up
     def __init__(self, connection_params: pika.ConnectionParameters, queue: str, callback_func: callable,
-                 error_func: callable, auto_ack: bool = True, exchange: str=None,
+                 error_func: callable, auto_ack: bool = True, queue_reset: bool = False, exchange: str = None,
+                 exchange_reset: bool = False,
                  exchange_type: str = ExchangeType.direct, *args, **kwargs):
         """
             :param connection_params: pika connection parameters
@@ -63,18 +64,21 @@ class ConsumerThread(threading.Thread):
         self.connection = pika.BlockingConnection(connection_params)
         self.callback_func = callback_func
         self.error_func = error_func
-        self.exchange = exchange
-        self.exchange_type = exchange_type
-        self.queue = queue
+        self.exchange = exchange or ''
+        self.exchange_type = exchange_type or ExchangeType.direct
+        self.queue = queue or ''
         self.channel = self.connection.channel()
         self.channel.basic_qos(prefetch_count=50)
+        if queue_reset:
+            self.channel.queue_delete(queue=self.queue)
         declared_queue = self.channel.queue_declare(queue=self.queue, auto_delete=False)
         if self.exchange:
+            if exchange_reset:
+                self.channel.exchange_delete(exchange=self.exchange)
             self.channel.exchange_declare(exchange=self.exchange,
                                           exchange_type=self.exchange_type,
-                                          auto_delete=False,
-                                          arguments={'pika_version': pika.__version__})
-            self.channel.queue_bind(queue=declared_queue.method.queue, exchange=self.exchange, routing_key=self.queue)
+                                          auto_delete=False)
+            self.channel.queue_bind(queue=declared_queue.method.queue, exchange=self.exchange)
         self.channel.basic_consume(on_message_callback=self.callback_func,
                                    queue=self.queue,
                                    auto_ack=auto_ack)
@@ -161,9 +165,13 @@ class MQConnector(ABC):
         return uuid.uuid4().hex
 
     @classmethod
-    def emit_mq_message(cls, connection: pika.BlockingConnection, queue: str, request_data: dict,
-                        exchange: Optional[str],
-                        exchange_type: Optional[str] = ExchangeType.direct, expiration: int = 1000) -> str:
+    def emit_mq_message(cls,
+                        connection: pika.BlockingConnection,
+                        request_data: dict,
+                        exchange: Optional[str] = '',
+                        queue: Optional[str] = '',
+                        exchange_type: Optional[str] = ExchangeType.direct,
+                        expiration: int = 1000) -> str:
         """
             Emits request to the neon api service on the MQ bus
 
@@ -181,15 +189,14 @@ class MQConnector(ABC):
             message_id = cls.create_unique_id()
             request_data['message_id'] = message_id
             channel = connection.channel()
-            declared_queue = channel.queue_declare(queue, auto_delete=False)
-            if exchange:
-                channel.exchange_declare(exchange=exchange,
-                                         exchange_type=exchange_type,
-                                         auto_delete=False,
-                                         arguments={'pika_version': pika.__version__})
-                channel.queue_bind(queue=declared_queue.method.queue,
-                                   exchange=exchange,
-                                   routing_key=queue)
+            if queue:
+                declared_queue = channel.queue_declare(queue=queue, auto_delete=False)
+                if exchange:
+                    channel.exchange_declare(exchange=exchange,
+                                             exchange_type=exchange_type,
+                                             auto_delete=False)
+                    channel.queue_bind(queue=declared_queue.method.queue,
+                                       exchange=exchange)
             channel.basic_publish(exchange=exchange or '',
                                   routing_key=queue,
                                   body=dict_to_b64(request_data),
@@ -212,8 +219,8 @@ class MQConnector(ABC):
         return pika.BlockingConnection(parameters=self.get_connection_params(vhost, **kwargs))
 
     def register_consumer(self, name: str, vhost: str, queue: str,
-                          callback: callable, on_error: Optional[callable] = None,
-                          exchange: str = None, exchange_type: str = None,
+                          callback: callable, queue_reset: bool = False, on_error: Optional[callable] = None,
+                          exchange: str = None, exchange_type: str = None, exchange_reset: bool = False,
                           auto_ack: bool = True):
         """
         Registers a consumer for the specified queue. The callback function will handle items in the queue.
@@ -221,15 +228,19 @@ class MQConnector(ABC):
         :param name: Human readable name of the consumer
         :param vhost: vhost to register on
         :param queue: MQ Queue to read messages from
+        :param queue_reset: to delete queue if exists (defaults to False)
         :param exchange: MQ Exchange to bind to
+        :param exchange_reset: to delete exchange if exists (defaults to False)
         :param exchange_type: Type of MQ Exchange to use
         :param callback: Method to passed queued messages to
         :param on_error: Optional method to handle any exceptions raised in message handling
         :param auto_ack: Boolean to enable ack of messages upon receipt
         """
         error_handler = on_error or self.default_error_handler
-        self.consumers[name] = ConsumerThread(self.get_connection_params(vhost), queue=queue, callback_func=callback,
-                                              exchange=exchange, exchange_type=exchange_type,
+        self.consumers[name] = ConsumerThread(self.get_connection_params(vhost), queue=queue, queue_reset=queue_reset,
+                                              callback_func=callback,
+                                              exchange=exchange, exchange_reset=exchange_reset,
+                                              exchange_type=exchange_type,
                                               error_func=error_handler, auto_ack=auto_ack, name=name)
 
     @staticmethod
