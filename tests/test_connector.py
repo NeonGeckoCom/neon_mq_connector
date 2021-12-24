@@ -128,30 +128,30 @@ class MQConnectorChildTest(unittest.TestCase):
         self.assertTrue(self.connector_instance.func_1_ok)
         self.assertTrue(self.connector_instance.func_2_ok)
 
-    # @pytest.mark.timeout(30)
-    # def test_error(self):
-    #     with self.connector_instance.create_mq_connection(vhost=self.connector_instance.vhost) as mq_conn:
-    #         self.connector_instance.emit_mq_message(mq_conn,
-    #                                                 queue='error',
-    #                                                 request_data={'data': 'test'},
-    #                                                 exchange='',
-    #                                                 expiration=4000)
-    #
-    #     time.sleep(3)
-    #     self.assertIsInstance(self.connector_instance.exception, Exception)
-    #     self.assertEqual(str(self.connector_instance.exception), "Exception to Handle")
-    #
-    # def test_consumer_after_message(self):
-    #     with self.connector_instance.create_mq_connection(vhost=self.connector_instance.vhost) as mq_conn:
-    #         self.connector_instance.emit_mq_message(mq_conn,
-    #                                                 queue='test3',
-    #                                                 request_data={'data':'test'},
-    #                                                 exchange='',
-    #                                                 expiration=3000)
-    #
-    #     self.connector_instance.register_consumer("test_consumer_after_message",
-    #                                               self.connector_instance.vhost, "test3",
-    #                                               self.connector_instance.callback_func_after_message, auto_ack=False)
-    #     self.connector_instance.run_consumers(("test_consumer_after_message",))
-    #     time.sleep(3)
-    #     self.assertTrue(self.connector_instance.callback_ok)
+    @pytest.mark.timeout(30)
+    def test_error(self):
+        with self.connector_instance.create_mq_connection(vhost=self.connector_instance.vhost) as mq_conn:
+            self.connector_instance.emit_mq_message(mq_conn,
+                                                    queue='error',
+                                                    request_data={'data': 'test'},
+                                                    exchange='',
+                                                    expiration=4000)
+
+        time.sleep(3)
+        self.assertIsInstance(self.connector_instance.exception, Exception)
+        self.assertEqual(str(self.connector_instance.exception), "Exception to Handle")
+
+    def test_consumer_after_message(self):
+        with self.connector_instance.create_mq_connection(vhost=self.connector_instance.vhost) as mq_conn:
+            self.connector_instance.emit_mq_message(mq_conn,
+                                                    queue='test3',
+                                                    request_data={'data':'test'},
+                                                    exchange='',
+                                                    expiration=3000)
+
+        self.connector_instance.register_consumer("test_consumer_after_message",
+                                                  self.connector_instance.vhost, "test3",
+                                                  self.connector_instance.callback_func_after_message, auto_ack=False)
+        self.connector_instance.run_consumers(("test_consumer_after_message",))
+        time.sleep(3)
+        self.assertTrue(self.connector_instance.callback_ok)
