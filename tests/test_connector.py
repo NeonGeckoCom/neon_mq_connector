@@ -92,7 +92,7 @@ class MQConnectorChildTest(unittest.TestCase):
         self.assertIsNotNone(self.connector_instance.service_id)
 
     @pytest.mark.timeout(30)
-    def test_produce_direct(self):
+    def test_mq_messaging(self):
         self.connector_instance.func_1_ok = False
         self.connector_instance.func_2_ok = False
         test_consumers = ('test1', 'test2',)
@@ -125,29 +125,24 @@ class MQConnectorChildTest(unittest.TestCase):
         self.assertTrue(self.connector_instance.func_2_ok)
 
     @pytest.mark.timeout(30)
-    def test_produce_fanout(self):
+    def test_publish_subscribe(self):
         self.connector_instance.func_1_ok = False
         self.connector_instance.func_2_ok = False
         test_consumers = ('test1', 'test2',)
         self.connector_instance.stop_consumers(names=test_consumers)
-        self.connector_instance.register_consumer(name="test1", vhost=self.connector_instance.vhost,
-                                                  exchange='test',
-                                                  exchange_type='fanout',
-                                                  queue='test',
-                                                  callback=self.connector_instance.callback_func_1,
-                                                  auto_ack=False)
-        self.connector_instance.register_consumer(name="test2", vhost=self.connector_instance.vhost,
-                                                  exchange='test',
-                                                  exchange_type='fanout',
-                                                  queue='test1',
-                                                  callback=self.connector_instance.callback_func_2,
-                                                  auto_ack=False)
+        self.connector_instance.register_subscriber(name="test1",
+                                                    vhost=self.connector_instance.vhost,
+                                                    exchange='test',
+                                                    callback=self.connector_instance.callback_func_1,
+                                                    auto_ack=False)
+        self.connector_instance.register_subscriber(name="test2", vhost=self.connector_instance.vhost,
+                                                    exchange='test',
+                                                    callback=self.connector_instance.callback_func_2,
+                                                    auto_ack=False)
         self.connector_instance.run_consumers(names=test_consumers)
         with self.connector_instance.create_mq_connection(vhost=self.connector_instance.vhost) as mq_conn:
-            self.connector_instance.emit_mq_message(mq_conn,
+            self.connector_instance.publish_message(mq_conn,
                                                     exchange='test',
-                                                    exchange_type='fanout',
-                                                    queue='',
                                                     request_data={'data': 'Hello!'},
                                                     expiration=4000)
         time.sleep(3)

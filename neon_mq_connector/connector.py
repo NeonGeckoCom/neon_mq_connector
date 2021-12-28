@@ -48,12 +48,15 @@ class ConsumerThread(threading.Thread):
     """Rabbit MQ Consumer class that aims at providing unified configurable interface for consumer threads"""
     @retry(use_self=True)  # Handle connection failures in case MQ server is still starting up
     def __init__(self, connection_params: pika.ConnectionParameters, queue: str, callback_func: callable,
-                 error_func: callable, auto_ack: bool = True, queue_reset: bool = False, exchange: str = None,
+                 error_func: callable, auto_ack: bool = True, queue_reset: bool = False,
+                 queue_exclusive: bool = False,
+                 exchange: str = None,
                  exchange_reset: bool = False,
                  exchange_type: str = ExchangeType.direct, *args, **kwargs):
         """
             :param connection_params: pika connection parameters
             :param queue: Desired consuming queue
+            :param queue_exclusive: If declared queue has to exclusive for given channel (deletes with it)
             :param callback_func: logic on message receiving
             :param error_func: handler for consumer thread errors
             :param auto_ack: Boolean to enable ack of messages upon receipt
@@ -72,7 +75,7 @@ class ConsumerThread(threading.Thread):
         self.channel.basic_qos(prefetch_count=50)
         if queue_reset:
             self.channel.queue_delete(queue=self.queue)
-        declared_queue = self.channel.queue_declare(queue=self.queue, auto_delete=False)
+        declared_queue = self.channel.queue_declare(queue=self.queue, auto_delete=False, exclusive=queue_exclusive)
         if self.exchange:
             if exchange_reset:
                 self.channel.exchange_delete(exchange=self.exchange)
@@ -209,6 +212,16 @@ class MQConnector(ABC):
         else:
             raise ValueError(f'Invalid request data provided: {request_data}')
 
+    @classmethod
+    def publish_message(cls,
+                        connection: pika.BlockingConnection,
+                        request_data: dict,
+                        exchange: Optional[str] = '',
+                        expiration: int = 1000) -> str:
+        """Convenience method to implement publish event on fanout exchange, wrapper for emit_mq_message()"""
+        return cls.emit_mq_message(connection=connection, request_data=request_data, exchange=exchange,
+                                   queue='', exchange_type='fanout', expiration=expiration)
+
     def create_mq_connection(self, vhost: str = '/', **kwargs):
         """
             Creates MQ Connection on the specified virtual host
@@ -224,7 +237,7 @@ class MQConnector(ABC):
     def register_consumer(self, name: str, vhost: str, queue: str,
                           callback: callable, queue_reset: bool = False, on_error: Optional[callable] = None,
                           exchange: str = None, exchange_type: str = None, exchange_reset: bool = False,
-                          auto_ack: bool = True):
+                          auto_ack: bool = True, queue_exclusive: bool = False, skip_on_existing: bool = False):
         """
         Registers a consumer for the specified queue. The callback function will handle items in the queue.
         Any raised exceptions will be passed as arguments to on_error.
@@ -238,13 +251,38 @@ class MQConnector(ABC):
         :param callback: Method to passed queued messages to
         :param on_error: Optional method to handle any exceptions raised in message handling
         :param auto_ack: Boolean to enable ack of messages upon receipt
+        :param queue_exclusive: if Queue needs to be exclusive
+        :param skip_on_existing: to skip if consumer already exists (defaults to False)
         """
         error_handler = on_error or self.default_error_handler
+        if self.consumers.get(name, None):
+            # Gracefully terminating
+            if skip_on_existing:
+                LOG.info(f'Consumer under index "{name}" already declared')
+                return
+            self.stop_consumers(names=(name,))
         self.consumers[name] = ConsumerThread(self.get_connection_params(vhost), queue=queue, queue_reset=queue_reset,
                                               callback_func=callback,
-                                              exchange=exchange, exchange_reset=exchange_reset,
+                                              exchange=exchange,
+                                              exchange_reset=exchange_reset,
                                               exchange_type=exchange_type,
-                                              error_func=error_handler, auto_ack=auto_ack, name=name)
+                                              error_func=error_handler, auto_ack=auto_ack, name=name,
+                                              queue_exclusive=queue_exclusive)
+
+    def register_subscriber(self, name: str, vhost: str,
+                            callback: callable, on_error: Optional[callable] = None,
+                            exchange: str = None, exchange_reset: bool = False,
+                            auto_ack: bool = True):
+        """
+            Convenience method for registering subscriber using MQ "fanout" exchange type,
+            wrapper for register_subscriber()
+        """
+        # for fanout exchange queue does not matter unless its non-conflicting and is binded
+        subscriber_queue = f'subscriber_{uuid.uuid4().hex[:6]}'
+        return self.register_consumer(name=name, vhost=vhost, queue=subscriber_queue, callback=callback,
+                                      queue_reset=False, on_error=on_error, exchange=exchange,
+                                      exchange_type=ExchangeType.fanout.value, exchange_reset=exchange_reset,
+                                      auto_ack=auto_ack, queue_exclusive=True)
 
     @staticmethod
     def default_error_handler(thread: ConsumerThread, exception: Exception):
