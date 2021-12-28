@@ -61,6 +61,7 @@ class ConsumerThread(threading.Thread):
             :param exchange_type: type of exchange to bind to from ExchangeType (defaults to direct)
         """
         threading.Thread.__init__(self, *args, **kwargs)
+        self.is_consuming = False
         self.connection = pika.BlockingConnection(connection_params)
         self.callback_func = callback_func
         self.error_func = error_func
@@ -88,6 +89,7 @@ class ConsumerThread(threading.Thread):
         super(ConsumerThread, self).run()
         try:
             self.channel.start_consuming()
+            self.is_consuming = True
         except pika.exceptions.ChannelClosed:
             LOG.debug(f"Channel closed by broker: {self.callback_func}")
         except Exception as e:
@@ -98,6 +100,7 @@ class ConsumerThread(threading.Thread):
         """Terminating consumer channel"""
         try:
             self.channel.stop_consuming()
+            self.is_consuming = False
             if self.channel.is_open:
                 self.channel.close()
             if self.connection.is_open:
@@ -271,6 +274,7 @@ class MQConnector(ABC):
             try:
                 if name in list(self.consumers):
                     self.consumers[name].join()
+                    self.consumers.pop(name)
             except Exception as e:
                 raise ChildProcessError(e)
 
