@@ -56,12 +56,14 @@ class ConsumerThread(threading.Thread):
         """
             :param connection_params: pika connection parameters
             :param queue: Desired consuming queue
-            :param queue_exclusive: If declared queue has to exclusive for given channel (deletes with it)
+            :param queue_exclusive: Marks declared queue as exclusive to a given channel (deletes with it)
             :param callback_func: logic on message receiving
             :param error_func: handler for consumer thread errors
             :param auto_ack: Boolean to enable ack of messages upon receipt
             :param exchange: exchange to bind queue to (optional)
             :param exchange_type: type of exchange to bind to from ExchangeType (defaults to direct)
+                                  follow: https://www.rabbitmq.com/tutorials/amqp-concepts.html
+                                  to learn more about different exchanges
         """
         threading.Thread.__init__(self, *args, **kwargs)
         self.is_consuming = False
@@ -218,7 +220,17 @@ class MQConnector(ABC):
                         request_data: dict,
                         exchange: Optional[str] = '',
                         expiration: int = 1000) -> str:
-        """Convenience method to implement publish event on fanout exchange, wrapper for emit_mq_message()"""
+        """
+            Publishes message via fanout exchange, wrapper for emit_mq_message()
+
+            :param connection: pika connection object
+            :param request_data: dictionary with the request data
+            :param exchange: name of the exchange (optional)
+            :param expiration: mq message expiration time (in millis, defaults to 1 second)
+
+            :raises ValueError: invalid request data provided
+            :returns message_id: id of the sent message
+        """
         return cls.emit_mq_message(connection=connection, request_data=request_data, exchange=exchange,
                                    queue='', exchange_type='fanout', expiration=expiration)
 
@@ -247,7 +259,8 @@ class MQConnector(ABC):
         :param queue_reset: to delete queue if exists (defaults to False)
         :param exchange: MQ Exchange to bind to
         :param exchange_reset: to delete exchange if exists (defaults to False)
-        :param exchange_type: Type of MQ Exchange to use
+        :param exchange_type: Type of MQ Exchange to use,
+                              documentation: https://www.rabbitmq.com/tutorials/amqp-concepts.html
         :param callback: Method to passed queued messages to
         :param on_error: Optional method to handle any exceptions raised in message handling
         :param auto_ack: Boolean to enable ack of messages upon receipt
@@ -272,17 +285,27 @@ class MQConnector(ABC):
     def register_subscriber(self, name: str, vhost: str,
                             callback: callable, on_error: Optional[callable] = None,
                             exchange: str = None, exchange_reset: bool = False,
-                            auto_ack: bool = True):
+                            auto_ack: bool = True, skip_on_existing: bool = False):
         """
-            Convenience method for registering subscriber using MQ "fanout" exchange type,
-            wrapper for register_subscriber()
+            Registers fanout exchange subscriber, wraps register_consumer()
+
+            Any raised exceptions will be passed as arguments to on_error.
+            :param name: Human readable name of the consumer
+            :param vhost: vhost to register on
+            :param exchange: MQ Exchange to bind to
+            :param exchange_reset: to delete exchange if exists (defaults to False)
+            :param callback: Method to passed queued messages to
+            :param on_error: Optional method to handle any exceptions raised in message handling
+            :param auto_ack: Boolean to enable ack of messages upon receipt
+            :param skip_on_existing: to skip if consumer already exists (defaults to False)
         """
         # for fanout exchange queue does not matter unless its non-conflicting and is binded
         subscriber_queue = f'subscriber_{uuid.uuid4().hex[:6]}'
+        LOG.info(f'Subscriber queue registered: {subscriber_queue}')
         return self.register_consumer(name=name, vhost=vhost, queue=subscriber_queue, callback=callback,
                                       queue_reset=False, on_error=on_error, exchange=exchange,
                                       exchange_type=ExchangeType.fanout.value, exchange_reset=exchange_reset,
-                                      auto_ack=auto_ack, queue_exclusive=True)
+                                      auto_ack=auto_ack, queue_exclusive=True, skip_on_existing=skip_on_existing)
 
     @staticmethod
     def default_error_handler(thread: ConsumerThread, exception: Exception):
