@@ -1,2 +1,2 @@
 pika==1.2.0
-neon_utils~=0.13
+neon_utils~=0.14
