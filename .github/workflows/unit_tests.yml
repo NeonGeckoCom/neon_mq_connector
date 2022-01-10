@@ -45,3 +45,11 @@ jobs:
         with:
           name: connector-test-results
           path: tests/connector-test-results.xml
+      - name: Run Backward Compatibility Tests
+        run: |
+          pytest tests/test_backward_compatibility.py --doctest-modules --junitxml=tests/backward-compatibility-test-results.xml
+      - name: Upload Backward Compatibility test results
+        uses: actions/upload-artifact@v2
+        with:
+          name: backward-compatibility-test-results
+          path: tests/backward-compatibility-test-results.xml
