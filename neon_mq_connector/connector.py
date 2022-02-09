@@ -196,20 +196,20 @@ class MQConnector(ABC):
         if request_data and len(request_data) > 0 and isinstance(request_data, dict):
             message_id = cls.create_unique_id()
             request_data['message_id'] = message_id
-            channel = connection.channel()
-            if queue:
-                declared_queue = channel.queue_declare(queue=queue, auto_delete=False)
+            with connection.channel() as channel:
                 if exchange:
                     channel.exchange_declare(exchange=exchange,
                                              exchange_type=exchange_type,
                                              auto_delete=False)
-                    channel.queue_bind(queue=declared_queue.method.queue,
-                                       exchange=exchange)
-            channel.basic_publish(exchange=exchange or '',
-                                  routing_key=queue,
-                                  body=dict_to_b64(request_data),
-                                  properties=pika.BasicProperties(expiration=str(expiration)))
-            channel.close()
+                if queue:
+                    declared_queue = channel.queue_declare(queue=queue, auto_delete=False)
+                    if exchange_type == ExchangeType.fanout.value:
+                        channel.queue_bind(queue=declared_queue.method.queue,
+                                           exchange=exchange)
+                channel.basic_publish(exchange=exchange or '',
+                                      routing_key=queue,
+                                      body=dict_to_b64(request_data),
+                                      properties=pika.BasicProperties(expiration=str(expiration)))
             return message_id
         else:
             raise ValueError(f'Invalid request data provided: {request_data}')
@@ -247,9 +247,10 @@ class MQConnector(ABC):
         return pika.BlockingConnection(parameters=self.get_connection_params(vhost, **kwargs))
 
     def register_consumer(self, name: str, vhost: str, queue: str,
-                          callback: callable, queue_reset: bool = False, on_error: Optional[callable] = None,
+                          callback: callable, on_error: Optional[callable] = None,
+                          auto_ack: bool = True, queue_reset: bool = False,
                           exchange: str = None, exchange_type: str = None, exchange_reset: bool = False,
-                          auto_ack: bool = True, queue_exclusive: bool = False, skip_on_existing: bool = False):
+                          queue_exclusive: bool = False, skip_on_existing: bool = False):
         """
         Registers a consumer for the specified queue. The callback function will handle items in the queue.
         Any raised exceptions will be passed as arguments to on_error.
