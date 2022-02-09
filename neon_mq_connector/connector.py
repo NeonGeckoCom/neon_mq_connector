@@ -357,7 +357,7 @@ class MQConnector(ABC):
 
         with self.create_mq_connection(vhost=vhost) as mq_connection:
             LOG.info(f'Emitting sync message to (vhost="{vhost}", exchange="{exchange}", queue="{queue}")')
-            self.emit_mq_message(mq_connection, queue=queue, exchange=exchange, request_data=request_data)
+            self.publish_message(mq_connection, exchange=exchange, request_data=request_data)
 
     def run(self, run_consumers: bool = True, run_sync: bool = True, **kwargs):
         """
