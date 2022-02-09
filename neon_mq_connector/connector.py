@@ -247,10 +247,9 @@ class MQConnector(ABC):
         return pika.BlockingConnection(parameters=self.get_connection_params(vhost, **kwargs))
 
     def register_consumer(self, name: str, vhost: str, queue: str,
-                          callback: callable, on_error: Optional[callable] = None,
-                          auto_ack: bool = True, queue_reset: bool = False,
+                          callback: callable, queue_reset: bool = False, on_error: Optional[callable] = None,
                           exchange: str = None, exchange_type: str = None, exchange_reset: bool = False,
-                          queue_exclusive: bool = False, skip_on_existing: bool = False):
+                          auto_ack: bool = True, queue_exclusive: bool = False, skip_on_existing: bool = False):
         """
         Registers a consumer for the specified queue. The callback function will handle items in the queue.
         Any raised exceptions will be passed as arguments to on_error.
@@ -301,8 +300,9 @@ class MQConnector(ABC):
             :param skip_on_existing: to skip if consumer already exists (defaults to False)
         """
         # for fanout exchange queue does not matter unless its non-conflicting and is binded
-        subscriber_queue = f'subscriber_{uuid.uuid4().hex[:6]}'
-        LOG.info(f'Subscriber queue registered: {subscriber_queue}')
+        subscriber_queue = f'subscriber_{exchange}_{uuid.uuid4().hex[:6]}'
+        LOG.info(f'Subscriber queue registered: {subscriber_queue} '
+                 f'[subscriber_name={name},exchange={exchange},vhost={vhost}]')
         return self.register_consumer(name=name, vhost=vhost, queue=subscriber_queue, callback=callback,
                                       queue_reset=False, on_error=on_error, exchange=exchange,
                                       exchange_type=ExchangeType.fanout.value, exchange_reset=exchange_reset,
