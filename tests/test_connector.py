@@ -33,12 +33,13 @@ import unittest
 import pytest
 
 from mock.mock import Mock
-from neon_mq_connector.utils import RepeatingTimer
+from neon_utils import LOG
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from neon_mq_connector.config import Configuration
 from neon_mq_connector.connector import MQConnector, ConsumerThread
-from neon_utils import LOG
+from neon_mq_connector.utils import RepeatingTimer
+
 
 
 class MQConnectorChild(MQConnector):
