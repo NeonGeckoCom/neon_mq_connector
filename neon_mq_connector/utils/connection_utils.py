@@ -78,7 +78,9 @@ def retry(callback_on_exceeded: Union[str, Callable] = None, callback_on_attempt
             with_self = use_self and self
             num_attempts = 0
             while num_attempts < num_retries:
-                LOG.info(f'Retrying {function} execution. Attempt #{num_attempts}')
+                if num_attempts > 0:
+                    LOG.info(f'Retrying {function} execution. '
+                             f'Attempt #{num_attempts}')
                 try:
                     if with_self:
                         return function(self, *args, **kwargs)
