@@ -247,9 +247,10 @@ class MQConnector(ABC):
         return pika.BlockingConnection(parameters=self.get_connection_params(vhost, **kwargs))
 
     def register_consumer(self, name: str, vhost: str, queue: str,
-                          callback: callable, queue_reset: bool = False, on_error: Optional[callable] = None,
+                          callback: callable, on_error: Optional[callable] = None,
+                          auto_ack: bool = True, queue_reset: bool = False,
                           exchange: str = None, exchange_type: str = None, exchange_reset: bool = False,
-                          auto_ack: bool = True, queue_exclusive: bool = False, skip_on_existing: bool = False):
+                          queue_exclusive: bool = False, skip_on_existing: bool = False):
         """
         Registers a consumer for the specified queue. The callback function will handle items in the queue.
         Any raised exceptions will be passed as arguments to on_error.

@@ -84,17 +84,13 @@ class MQConnectorChild(MQConnector):
                                on_error=self.handle_error, auto_ack=False)
 
 
-    def run(self, run_consumers: bool = True, run_sync: bool = True, **kwargs):
-        super().run(run_consumers=True, run_sync=False, **kwargs)
-
-
 class MQConnectorChildTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         file_path = os.environ.get('CONNECTOR_CONFIG', "~/.local/share/neon/credentials.json")
         cls.connector_instance = MQConnectorChild(config=Configuration(file_path=file_path).config_data,
                                                   service_name='test')
-        cls.connector_instance.run()
+        cls.connector_instance.run(run_sync=False)
 
     @classmethod
     def tearDownClass(cls) -> None:
