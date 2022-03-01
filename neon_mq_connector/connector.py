@@ -196,20 +196,20 @@ class MQConnector(ABC):
         if request_data and len(request_data) > 0 and isinstance(request_data, dict):
             message_id = cls.create_unique_id()
             request_data['message_id'] = message_id
-            channel = connection.channel()
-            if queue:
-                declared_queue = channel.queue_declare(queue=queue, auto_delete=False)
+            with connection.channel() as channel:
                 if exchange:
                     channel.exchange_declare(exchange=exchange,
                                              exchange_type=exchange_type,
                                              auto_delete=False)
-                    channel.queue_bind(queue=declared_queue.method.queue,
-                                       exchange=exchange)
-            channel.basic_publish(exchange=exchange or '',
-                                  routing_key=queue,
-                                  body=dict_to_b64(request_data),
-                                  properties=pika.BasicProperties(expiration=str(expiration)))
-            channel.close()
+                if queue:
+                    declared_queue = channel.queue_declare(queue=queue, auto_delete=False)
+                    if exchange_type == ExchangeType.fanout.value:
+                        channel.queue_bind(queue=declared_queue.method.queue,
+                                           exchange=exchange)
+                channel.basic_publish(exchange=exchange or '',
+                                      routing_key=queue,
+                                      body=dict_to_b64(request_data),
+                                      properties=pika.BasicProperties(expiration=str(expiration)))
             return message_id
         else:
             raise ValueError(f'Invalid request data provided: {request_data}')
@@ -301,8 +301,9 @@ class MQConnector(ABC):
             :param skip_on_existing: to skip if consumer already exists (defaults to False)
         """
         # for fanout exchange queue does not matter unless its non-conflicting and is binded
-        subscriber_queue = f'subscriber_{uuid.uuid4().hex[:6]}'
-        LOG.info(f'Subscriber queue registered: {subscriber_queue}')
+        subscriber_queue = f'subscriber_{exchange}_{uuid.uuid4().hex[:6]}'
+        LOG.info(f'Subscriber queue registered: {subscriber_queue} '
+                 f'[subscriber_name={name},exchange={exchange},vhost={vhost}]')
         return self.register_consumer(name=name, vhost=vhost, queue=subscriber_queue, callback=callback,
                                       queue_reset=False, on_error=on_error, exchange=exchange,
                                       exchange_type=ExchangeType.fanout.value, exchange_reset=exchange_reset,
@@ -357,7 +358,7 @@ class MQConnector(ABC):
 
         with self.create_mq_connection(vhost=vhost) as mq_connection:
             LOG.info(f'Emitting sync message to (vhost="{vhost}", exchange="{exchange}", queue="{queue}")')
-            self.emit_mq_message(mq_connection, queue=queue, exchange=exchange, request_data=request_data)
+            self.publish_message(mq_connection, exchange=exchange, request_data=request_data)
 
     def run(self, run_consumers: bool = True, run_sync: bool = True, **kwargs):
         """
