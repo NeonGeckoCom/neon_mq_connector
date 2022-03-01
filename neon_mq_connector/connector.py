@@ -34,6 +34,8 @@ import threading
 
 from abc import ABC, abstractmethod
 from typing import Optional
+
+from pika.exchange_type import ExchangeType
 from neon_utils import LOG
 from neon_utils.socket_utils import dict_to_b64
 
@@ -42,25 +44,47 @@ from .utils import RepeatingTimer, retry, wait_for_mq_startup
 
 
 class ConsumerThread(threading.Thread):
+
     """Rabbit MQ Consumer class that aims at providing unified configurable interface for consumer threads"""
     @retry(use_self=True)  # Handle connection failures in case MQ server is still starting up
     def __init__(self, connection_params: pika.ConnectionParameters, queue: str, callback_func: callable,
-                 error_func: callable, auto_ack: bool = True, *args, **kwargs):
+                 error_func: callable, auto_ack: bool = True, queue_reset: bool = False,
+                 queue_exclusive: bool = False,
+                 exchange: str = None,
+                 exchange_reset: bool = False,
+                 exchange_type: str = ExchangeType.direct, *args, **kwargs):
         """
             :param connection_params: pika connection parameters
             :param queue: Desired consuming queue
+            :param queue_exclusive: Marks declared queue as exclusive to a given channel (deletes with it)
             :param callback_func: logic on message receiving
             :param error_func: handler for consumer thread errors
             :param auto_ack: Boolean to enable ack of messages upon receipt
+            :param exchange: exchange to bind queue to (optional)
+            :param exchange_type: type of exchange to bind to from ExchangeType (defaults to direct)
+                                  follow: https://www.rabbitmq.com/tutorials/amqp-concepts.html
+                                  to learn more about different exchanges
         """
         threading.Thread.__init__(self, *args, **kwargs)
+        self.is_consuming = False
         self.connection = pika.BlockingConnection(connection_params)
         self.callback_func = callback_func
         self.error_func = error_func
-        self.queue = queue
+        self.exchange = exchange or ''
+        self.exchange_type = exchange_type or ExchangeType.direct
+        self.queue = queue or ''
         self.channel = self.connection.channel()
         self.channel.basic_qos(prefetch_count=50)
-        self.channel.queue_declare(queue=self.queue, auto_delete=False)
+        if queue_reset:
+            self.channel.queue_delete(queue=self.queue)
+        declared_queue = self.channel.queue_declare(queue=self.queue, auto_delete=False, exclusive=queue_exclusive)
+        if self.exchange:
+            if exchange_reset:
+                self.channel.exchange_delete(exchange=self.exchange)
+            self.channel.exchange_declare(exchange=self.exchange,
+                                          exchange_type=self.exchange_type,
+                                          auto_delete=False)
+            self.channel.queue_bind(queue=declared_queue.method.queue, exchange=self.exchange)
         self.channel.basic_consume(on_message_callback=self.callback_func,
                                    queue=self.queue,
                                    auto_ack=auto_ack)
@@ -70,6 +94,7 @@ class ConsumerThread(threading.Thread):
         super(ConsumerThread, self).run()
         try:
             self.channel.start_consuming()
+            self.is_consuming = True
         except pika.exceptions.ChannelClosed:
             LOG.debug(f"Channel closed by broker: {self.callback_func}")
         except Exception as e:
@@ -80,6 +105,7 @@ class ConsumerThread(threading.Thread):
         """Terminating consumer channel"""
         try:
             self.channel.stop_consuming()
+            self.is_consuming = False
             if self.channel.is_open:
                 self.channel.close()
             if self.connection.is_open:
@@ -147,8 +173,13 @@ class MQConnector(ABC):
         return uuid.uuid4().hex
 
     @classmethod
-    def emit_mq_message(cls, connection: pika.BlockingConnection, queue: str, request_data: dict,
-                        exchange: Optional[str], expiration: int = 1000) -> str:
+    def emit_mq_message(cls,
+                        connection: pika.BlockingConnection,
+                        request_data: dict,
+                        exchange: Optional[str] = '',
+                        queue: Optional[str] = '',
+                        exchange_type: Optional[str] = ExchangeType.direct,
+                        expiration: int = 1000) -> str:
         """
             Emits request to the neon api service on the MQ bus
 
@@ -156,6 +187,7 @@ class MQConnector(ABC):
             :param queue: name of the queue to publish in
             :param request_data: dictionary with the request data
             :param exchange: name of the exchange (optional)
+            :param exchange_type: type of exchange to declare (defaults to direct)
             :param expiration: mq message expiration time (in millis, defaults to 1 second)
 
             :raises ValueError: invalid request data provided
@@ -165,6 +197,14 @@ class MQConnector(ABC):
             message_id = cls.create_unique_id()
             request_data['message_id'] = message_id
             channel = connection.channel()
+            if queue:
+                declared_queue = channel.queue_declare(queue=queue, auto_delete=False)
+                if exchange:
+                    channel.exchange_declare(exchange=exchange,
+                                             exchange_type=exchange_type,
+                                             auto_delete=False)
+                    channel.queue_bind(queue=declared_queue.method.queue,
+                                       exchange=exchange)
             channel.basic_publish(exchange=exchange or '',
                                   routing_key=queue,
                                   body=dict_to_b64(request_data),
@@ -173,6 +213,26 @@ class MQConnector(ABC):
             return message_id
         else:
             raise ValueError(f'Invalid request data provided: {request_data}')
+
+    @classmethod
+    def publish_message(cls,
+                        connection: pika.BlockingConnection,
+                        request_data: dict,
+                        exchange: Optional[str] = '',
+                        expiration: int = 1000) -> str:
+        """
+            Publishes message via fanout exchange, wrapper for emit_mq_message()
+
+            :param connection: pika connection object
+            :param request_data: dictionary with the request data
+            :param exchange: name of the exchange (optional)
+            :param expiration: mq message expiration time (in millis, defaults to 1 second)
+
+            :raises ValueError: invalid request data provided
+            :returns message_id: id of the sent message
+        """
+        return cls.emit_mq_message(connection=connection, request_data=request_data, exchange=exchange,
+                                   queue='', exchange_type='fanout', expiration=expiration)
 
     def create_mq_connection(self, vhost: str = '/', **kwargs):
         """
@@ -187,21 +247,65 @@ class MQConnector(ABC):
         return pika.BlockingConnection(parameters=self.get_connection_params(vhost, **kwargs))
 
     def register_consumer(self, name: str, vhost: str, queue: str,
-                          callback: callable, on_error: Optional[callable] = None,
-                          auto_ack: bool = True):
+                          callback: callable, queue_reset: bool = False, on_error: Optional[callable] = None,
+                          exchange: str = None, exchange_type: str = None, exchange_reset: bool = False,
+                          auto_ack: bool = True, queue_exclusive: bool = False, skip_on_existing: bool = False):
         """
         Registers a consumer for the specified queue. The callback function will handle items in the queue.
         Any raised exceptions will be passed as arguments to on_error.
         :param name: Human readable name of the consumer
         :param vhost: vhost to register on
         :param queue: MQ Queue to read messages from
+        :param queue_reset: to delete queue if exists (defaults to False)
+        :param exchange: MQ Exchange to bind to
+        :param exchange_reset: to delete exchange if exists (defaults to False)
+        :param exchange_type: Type of MQ Exchange to use,
+                              documentation: https://www.rabbitmq.com/tutorials/amqp-concepts.html
         :param callback: Method to passed queued messages to
         :param on_error: Optional method to handle any exceptions raised in message handling
         :param auto_ack: Boolean to enable ack of messages upon receipt
+        :param queue_exclusive: if Queue needs to be exclusive
+        :param skip_on_existing: to skip if consumer already exists (defaults to False)
         """
         error_handler = on_error or self.default_error_handler
-        self.consumers[name] = ConsumerThread(self.get_connection_params(vhost), queue=queue, callback_func=callback,
-                                              error_func=error_handler, auto_ack=auto_ack, name=name)
+        if self.consumers.get(name, None):
+            # Gracefully terminating
+            if skip_on_existing:
+                LOG.info(f'Consumer under index "{name}" already declared')
+                return
+            self.stop_consumers(names=(name,))
+        self.consumers[name] = ConsumerThread(self.get_connection_params(vhost), queue=queue, queue_reset=queue_reset,
+                                              callback_func=callback,
+                                              exchange=exchange,
+                                              exchange_reset=exchange_reset,
+                                              exchange_type=exchange_type,
+                                              error_func=error_handler, auto_ack=auto_ack, name=name,
+                                              queue_exclusive=queue_exclusive)
+
+    def register_subscriber(self, name: str, vhost: str,
+                            callback: callable, on_error: Optional[callable] = None,
+                            exchange: str = None, exchange_reset: bool = False,
+                            auto_ack: bool = True, skip_on_existing: bool = False):
+        """
+            Registers fanout exchange subscriber, wraps register_consumer()
+
+            Any raised exceptions will be passed as arguments to on_error.
+            :param name: Human readable name of the consumer
+            :param vhost: vhost to register on
+            :param exchange: MQ Exchange to bind to
+            :param exchange_reset: to delete exchange if exists (defaults to False)
+            :param callback: Method to passed queued messages to
+            :param on_error: Optional method to handle any exceptions raised in message handling
+            :param auto_ack: Boolean to enable ack of messages upon receipt
+            :param skip_on_existing: to skip if consumer already exists (defaults to False)
+        """
+        # for fanout exchange queue does not matter unless its non-conflicting and is binded
+        subscriber_queue = f'subscriber_{uuid.uuid4().hex[:6]}'
+        LOG.info(f'Subscriber queue registered: {subscriber_queue}')
+        return self.register_consumer(name=name, vhost=vhost, queue=subscriber_queue, callback=callback,
+                                      queue_reset=False, on_error=on_error, exchange=exchange,
+                                      exchange_type=ExchangeType.fanout.value, exchange_reset=exchange_reset,
+                                      auto_ack=auto_ack, queue_exclusive=True, skip_on_existing=skip_on_existing)
 
     @staticmethod
     def default_error_handler(thread: ConsumerThread, exception: Exception):
@@ -231,6 +335,7 @@ class MQConnector(ABC):
             try:
                 if name in list(self.consumers):
                     self.consumers[name].join()
+                    self.consumers.pop(name)
             except Exception as e:
                 raise ChildProcessError(e)
 
