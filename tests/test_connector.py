@@ -29,15 +29,17 @@
 import os
 import sys
 import threading
-import time
 import unittest
 import pytest
-import pika
+
+from mock.mock import Mock
+from neon_utils import LOG
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from neon_mq_connector.config import Configuration
 from neon_mq_connector.connector import MQConnector, ConsumerThread
-from neon_utils import LOG
+from neon_mq_connector.utils import RepeatingTimer
+
 
 
 class MQConnectorChild(MQConnector):
@@ -186,3 +188,17 @@ class MQConnectorChildTest(unittest.TestCase):
         self.connector_instance.run_consumers(("test_consumer_after_message",))
         self.connector_instance.consume_event.wait(5)
         self.assertTrue(self.connector_instance.callback_ok)
+
+    def test_sync_thread(self):
+        self.assertIsInstance(self.connector_instance.sync_thread,
+                              RepeatingTimer)
+
+    def test_sync(self):
+        real_method = self.connector_instance.publish_message
+        mock_method = Mock()
+        self.connector_instance.publish_message = mock_method
+
+        self.connector_instance.sync()
+        mock_method.assert_called_once()
+
+        self.connector_instance.publish_message = real_method
