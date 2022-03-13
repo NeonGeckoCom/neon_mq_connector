@@ -41,7 +41,6 @@ from neon_mq_connector.connector import MQConnector, ConsumerThread
 from neon_mq_connector.utils import RepeatingTimer
 from neon_mq_connector.utils.rabbit_utils import create_mq_callback
 
-
 class MQConnectorChild(MQConnector):
 
     @create_mq_callback(include_callback_props=('channel', 'method',))
