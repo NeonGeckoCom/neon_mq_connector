@@ -35,7 +35,7 @@ import threading
 from abc import ABC, abstractmethod
 from typing import Optional
 from pika.exchange_type import ExchangeType
-from neon_utils import LOG
+from neon_utils import LOG, os
 from neon_utils.socket_utils import dict_to_b64
 
 from .config import load_neon_mq_config
@@ -150,7 +150,12 @@ class MQConnector(ABC):
         self.service_name = service_name
         self.consumers = dict()
         self.sync_period = 10  # in seconds
-        self.vhost = '/'
+        self._vhost = '/'
+        self.default_testing_prefix = 'test'
+        # order matters
+        self.testing_envs = (f'{self.service_name.upper()}_TESTING', 'MQ_TESTING',)
+        # order matters
+        self.testing_prefix_envs = (f'{self.service_name.upper()}_TESTING_PREFIX', 'MQ_TESTING_PREFIX',)
         self._sync_thread = None
 
     @property
@@ -168,6 +173,41 @@ class MQConnector(ABC):
         return pika.PlainCredentials(
             self.config['users'][self.service_name].get('user', 'guest'),
             self.config['users'][self.service_name].get('password', 'guest'))
+
+    @property
+    def testing_mode(self) -> bool:
+        """Indicates if given instance is instantiated in testing mode"""
+        return any(os.environ.get(env_var, '0') == '1'
+                   for env_var in self.testing_envs)
+
+    @property
+    def testing_prefix(self) -> str:
+        """Returns testing mode prefix for the item"""
+        for env_var in self.testing_prefix_envs:
+            prefix = os.environ.get(env_var)
+            if prefix:
+                return prefix
+        return self.default_testing_prefix
+
+    @property
+    def vhost(self):
+        if not self._vhost:
+            self._vhost = '/'
+        if self.testing_mode and self.testing_prefix not in self._vhost.split('_')[0]:
+            self._vhost = f'/{self.testing_prefix}_{self._vhost[1:]}'
+            if self._vhost.endswith('_'):
+                self._vhost = self._vhost[:-1]
+        return self._vhost
+
+    @vhost.setter
+    def vhost(self, val: str):
+        if not val:
+            val = ''
+        elif not isinstance(val, str):
+            val = str(val)
+        if not val.startswith('/'):
+            val = f'/{val}'
+        self._vhost = val
 
     def get_connection_params(self, vhost: str, **kwargs) -> \
             pika.ConnectionParameters:
