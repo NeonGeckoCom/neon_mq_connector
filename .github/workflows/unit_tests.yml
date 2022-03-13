@@ -31,8 +31,6 @@ jobs:
       - name: Run Utils Tests
         run: |
           pytest tests/test_utils.py --doctest-modules --junitxml=tests/utils-test-results.xml
-        env:
-          MQ_TESTING: 1
       - name: Upload Utils test results
         uses: actions/upload-artifact@v2
         with:
@@ -41,6 +39,8 @@ jobs:
       - name: Run Connector Tests
         run: |
           pytest tests/test_connector.py --doctest-modules --junitxml=tests/connector-test-results.xml
+        env:
+          MQ_TESTING: 1
       - name: Upload Connector test results
         uses: actions/upload-artifact@v2
         with:
