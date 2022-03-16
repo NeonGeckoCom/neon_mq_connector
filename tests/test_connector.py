@@ -41,7 +41,6 @@ from neon_mq_connector.connector import MQConnector, ConsumerThread
 from neon_mq_connector.utils import RepeatingTimer
 
 
-
 class MQConnectorChild(MQConnector):
 
     def callback_func_1(self, channel, method, properties, body):
@@ -76,7 +75,6 @@ class MQConnectorChild(MQConnector):
 
     def __init__(self, config: dict, service_name: str):
         super().__init__(config=config, service_name=service_name)
-        self.vhost = '/test'
         self.func_1_ok = False
         self.func_2_ok = False
         self.callback_ok = False
