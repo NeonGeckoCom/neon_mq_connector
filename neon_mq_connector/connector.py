@@ -430,8 +430,8 @@ class MQConnector(ABC):
                                         'time': int(time.time())}
 
         with self.create_mq_connection(vhost=vhost) as mq_connection:
-            LOG.info(f'Emitting sync message to (vhost="{vhost}",'
-                     f' exchange="{exchange}", queue="{queue}")')
+            LOG.debug(f'Emitting sync message to (vhost="{vhost}",'
+                      f' exchange="{exchange}", queue="{queue}")')
             self.publish_message(mq_connection, exchange=exchange,
                                  request_data=request_data)
 
