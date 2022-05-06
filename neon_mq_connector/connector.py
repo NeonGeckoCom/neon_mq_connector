@@ -43,6 +43,7 @@ from .utils import RepeatingTimer, retry, wait_for_mq_startup
 
 
 class ConsumerThread(threading.Thread):
+
     # retry to handle connection failures in case MQ server is still starting
     @retry(use_self=True)
     def __init__(self, connection_params: pika.ConnectionParameters,
@@ -128,7 +129,9 @@ class ConsumerThread(threading.Thread):
 class MQConnector(ABC):
     """Abstract method for attaching services to MQ cluster"""
 
-    @abstractmethod
+    __run_retries__ = 5
+    __max_consumer_restarts__ = 5
+
     def __init__(self, config: Optional[dict], service_name: str):
         """
             :param config: dictionary with current configurations.
@@ -150,6 +153,7 @@ class MQConnector(ABC):
         self.service_name = service_name
         self.consumers = dict()
         self.sync_period = 10  # in seconds
+        self.observe_period = 20  # in seconds
         self._vhost = '/'
         self.default_testing_prefix = 'test'
         # order matters
@@ -157,6 +161,7 @@ class MQConnector(ABC):
         # order matters
         self.testing_prefix_envs = (f'{self.service_name.upper()}_TESTING_PREFIX', 'MQ_TESTING_PREFIX',)
         self._sync_thread = None
+        self._observer_thread = None
 
     @property
     def service_id(self):
@@ -309,7 +314,8 @@ class MQConnector(ABC):
                           callback: callable, on_error: Optional[callable] = None,
                           auto_ack: bool = True, queue_reset: bool = False,
                           exchange: str = None, exchange_type: str = None, exchange_reset: bool = False,
-                          queue_exclusive: bool = False, skip_on_existing: bool = False):
+                          queue_exclusive: bool = False, skip_on_existing: bool = False,
+                          restart_attempts: int = __max_consumer_restarts__):
         """
         Registers a consumer for the specified queue.
         The callback function will handle items in the queue.
@@ -328,20 +334,42 @@ class MQConnector(ABC):
         :param auto_ack: Boolean to enable ack of messages upon receipt
         :param queue_exclusive: if Queue needs to be exclusive
         :param skip_on_existing: to skip if consumer already exists
+        :param restart_attempts: max instance restart attempts
         """
         error_handler = on_error or self.default_error_handler
-        if self.consumers.get(name, None):
+        consumer_data = self.consumers.get(name, None)
+        if consumer_data:
             # Gracefully terminating
-            if skip_on_existing:
+            if consumer_data.get('instance') and skip_on_existing:
                 LOG.info(f'Consumer under index "{name}" already declared')
                 return
             self.stop_consumers(names=(name,))
-        self.consumers[name] = ConsumerThread(
-            self.get_connection_params(vhost), queue=queue,
-            queue_reset=queue_reset, callback_func=callback,
-            exchange=exchange, exchange_reset=exchange_reset,
-            exchange_type=exchange_type, error_func=error_handler,
-            auto_ack=auto_ack, name=name, queue_exclusive=queue_exclusive)
+        self.consumers[name] = {}
+        self.consumers[name]['properties'] = dict(connection_params=self.get_connection_params(vhost),
+                                                  queue=queue,
+                                                  queue_reset=queue_reset, callback_func=callback,
+                                                  exchange=exchange, exchange_reset=exchange_reset,
+                                                  exchange_type=exchange_type, error_func=error_handler,
+                                                  auto_ack=auto_ack, name=name, queue_exclusive=queue_exclusive,)
+        self.consumers[name]['restart_attempts'] = int(restart_attempts)
+        self.consumers[name]['instance'] = ConsumerThread(**self.consumers[name]['properties'])
+
+    def restart_consumer(self, name: str):
+        self.stop_consumers(names=(name,))
+        consumer_data = self.consumers.get(name, {})
+        if not consumer_data.get('properties'):
+            err_msg = 'not exists'
+        elif consumer_data.get('num_restarted', 0) > consumer_data.get('restart_attempts',
+                                                                       self.__max_consumer_restarts__):
+            err_msg = 'num restarts exceeded'
+        else:
+            self.consumers[name]['instance'] = ConsumerThread(**self.consumers[name]['properties'])
+            self.run_consumers(names=(name,))
+            self.consumers[name].setdefault('num_restarted', 0)
+            self.consumers[name]['num_restarted'] += 1
+            err_msg = ""
+        if err_msg:
+            LOG.error(f'Cannot restart consumer "{name}" - {err_msg}')
 
     def register_subscriber(self, name: str, vhost: str,
                             callback: callable,
@@ -393,35 +421,37 @@ class MQConnector(ABC):
         if not names or len(names) == 0:
             names = list(self.consumers)
         for name in names:
-            if name in list(self.consumers) and not self.consumers[name].is_alive():
-                self.consumers[name].daemon = daemon
-                self.consumers[name].start()
+            if isinstance(self.consumers.get(name, {}).get('instance'), ConsumerThread)\
+                    and not self.consumers[name]['instance'].is_alive():
+                self.consumers[name]['instance'].daemon = daemon
+                self.consumers[name]['instance'].start()
 
     def stop_consumers(self, names: tuple = ()):
         """
-        Stops consumer threads based on the name if present
-        (stops all of the declared consumers by default)
+            Stops consumer threads based on the name if present
+            (stops all of the declared consumers by default)
         """
         if not names or len(names) == 0:
             names = list(self.consumers)
         for name in names:
             try:
-                if name in list(self.consumers):
-                    self.consumers[name].join()
-                    self.consumers.pop(name)
+                consumer_instance = self.consumers.get(name, {}).get('instance')
+                if consumer_instance:
+                    consumer_instance.join()
+                    self.consumers[name].pop('instance', None)
             except Exception as e:
                 raise ChildProcessError(e)
 
     def sync(self, vhost: str = None, exchange: str = None, queue: str = None,
              request_data: dict = None):
         """
-        Periodical notification message to be sent into MQ,
-        used to notify other network listeners about this service health status
+            Periodical notification message to be sent into MQ,
+            used to notify other network listeners about this service health status
 
-        :param vhost: mq virtual host (defaults to self.vhost)
-        :param exchange: mq exchange (defaults to base one)
-        :param queue: message queue prefix (defaults to self.service_name)
-        :param request_data: data to publish in sync
+            :param vhost: mq virtual host (defaults to self.vhost)
+            :param exchange: mq exchange (defaults to base one)
+            :param queue: message queue prefix (defaults to self.service_name)
+            :param request_data: data to publish in sync
         """
         vhost = vhost or self.vhost
         queue = f'{queue or self.service_name}_sync'
@@ -435,35 +465,36 @@ class MQConnector(ABC):
             self.publish_message(mq_connection, exchange=exchange,
                                  request_data=request_data)
 
-    def run(self, run_consumers: bool = True, run_sync: bool = True, **kwargs):
+    @retry(callback_on_exceeded='stop', use_self=True, num_retries=__run_retries__)
+    def run(self, run_consumers: bool = True, run_sync: bool = True, run_observer: bool = True, **kwargs):
         """
-        Generic method called on running the instance
+            Generic method called on running the instance
 
-        :param run_consumers: to run this instance consumers (defaults to True)
-        :param run_sync: to run synchronization thread (defaults to True)
+            :param run_consumers: to run this instance consumers (defaults to True)
+            :param run_sync: to run synchronization thread (defaults to True)
+            :param run_observer: to run consumers state observation (defaults to True)
         """
-        try:
-            host = self.config.get('server', 'localhost')
-            port = int(self.config.get('port', '5672'))
-            wait_for_mq_startup(host, port)
-            kwargs.setdefault('consumer_names', ())
-            kwargs.setdefault('daemonize_consumers', False)
-            self.pre_run(**kwargs)
-            if run_consumers:
-                self.run_consumers(names=kwargs['consumer_names'],
-                                   daemon=kwargs['daemonize_consumers'])
-            if run_sync:
-                self.sync_thread.start()
-            self.post_run(**kwargs)
-        except Exception as ex:
-            self.stop()
-            LOG.error(f'Connection received interrupt due to exception {ex}')
+        host = self.config.get('server', 'localhost')
+        port = int(self.config.get('port', '5672'))
+        wait_for_mq_startup(host, port)
+        kwargs.setdefault('consumer_names', ())
+        kwargs.setdefault('daemonize_consumers', False)
+        self.pre_run(**kwargs)
+        if run_consumers:
+            self.run_consumers(names=kwargs['consumer_names'],
+                               daemon=kwargs['daemonize_consumers'])
+        if run_sync:
+            self.sync_thread.start()
+        if run_observer:
+            self.observer_thread.start()
+        self.post_run(**kwargs)
 
     @property
     def sync_thread(self):
         """Creates new Repeating Timer if none is present"""
-        if not self._sync_thread:
+        if not (isinstance(self._sync_thread, RepeatingTimer) and self._sync_thread.is_alive()):
             self._sync_thread = RepeatingTimer(self.sync_period, self.sync)
+            self._sync_thread.daemon = True
         return self._sync_thread
 
     def stop_sync_thread(self):
@@ -472,10 +503,35 @@ class MQConnector(ABC):
             self._sync_thread.cancel()
             self._sync_thread = None
 
+    def observe_consumers(self):
+        LOG.debug('Observers state observation')
+        for consumer_name, consumer_data in self.consumers.items():
+            consumer_instance = consumer_data.get('instance')
+            if not (isinstance(consumer_instance, ConsumerThread)
+                    and consumer_instance.is_alive()
+                    and consumer_instance.is_consuming):
+                LOG.info(f'Consumer "{consumer_name}" is dead, restarting')
+                self.restart_consumer(name=consumer_name)
+
+    @property
+    def observer_thread(self):
+        """Creates new Repeating Timer if none is present"""
+        if not (isinstance(self._observer_thread, RepeatingTimer) and self._observer_thread.is_alive()):
+            self._observer_thread = RepeatingTimer(self.observe_period, self.observe_consumers)
+            self._observer_thread.daemon = True
+        return self._observer_thread
+
+    def stop_observer_thread(self):
+        """Stops Repeating Timer and dereferences it"""
+        if self._observer_thread:
+            self._observer_thread.cancel()
+            self._observer_thread = None
+
     def stop(self):
         """Generic method for graceful instance stopping"""
         self.stop_consumers()
         self.stop_sync_thread()
+        self.stop_observer_thread()
 
     def pre_run(self, **kwargs):
         """Additional logic invoked before method run()"""
