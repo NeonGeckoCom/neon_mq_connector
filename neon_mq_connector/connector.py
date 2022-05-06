@@ -437,7 +437,7 @@ class MQConnector(ABC):
             try:
                 if name in list(self.consumers):
                     self.consumers[name].join()
-                    self.consumers.pop(name)
+                    self.consumers[name] = None
             except Exception as e:
                 raise ChildProcessError(e)
 
