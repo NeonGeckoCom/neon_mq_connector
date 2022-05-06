@@ -76,9 +76,12 @@ def retry(callback_on_exceeded: Union[str, Callable] = None, callback_on_attempt
     def decorator(function):
         def wrapper(self, *args, **kwargs):
             with_self = use_self and self
-            num_attempts = 0
-            while num_attempts < num_retries:
-                if num_attempts > 0:
+            num_attempts = 1
+            error_body = f"{function.__name__}(args={args}, kwargs={kwargs})"
+            if with_self:
+                error_body = f'{self.__class__.__name__}.{error_body}'
+            while num_attempts <= num_retries:
+                if num_attempts > 1:
                     LOG.info(f'Retrying {function} execution. '
                              f'Attempt #{num_attempts}')
                 try:
@@ -92,16 +95,19 @@ def retry(callback_on_exceeded: Union[str, Callable] = None, callback_on_attempt
                             callback_on_attempt_failure_args[i] = e
                         elif callback_on_attempt_failure_args[i] == 'self':
                             callback_on_attempt_failure_args[i] = self
-                    if callback_on_attempt_failure:
-                        if with_self and isinstance(callback_on_attempt_failure, str):
-                            getattr(self, callback_on_attempt_failure)(*callback_on_attempt_failure_args)
-                        elif isinstance(callback_on_attempt_failure, Callable):
-                            callback_on_attempt_failure(*callback_on_attempt_failure_args)
+                    try:
+                        if callback_on_attempt_failure:
+                            if with_self and isinstance(callback_on_attempt_failure, str):
+                                getattr(self, callback_on_attempt_failure)(*callback_on_attempt_failure_args)
+                            elif isinstance(callback_on_attempt_failure, Callable):
+                                callback_on_attempt_failure(*callback_on_attempt_failure_args)
+                    except Exception as ex:
+                        LOG.error(f'Failed to execute callback_on_attempt_failure function {callback_on_attempt_failure.__name__}({callback_on_attempt_failure_args}) - {ex}')
                     sleep_timeout = get_timeout(backoff_factor=backoff_factor, number_of_retries=num_attempts)
-                    LOG.error(f'{function} execution failed due to exception: {e}. Timeout for {sleep_timeout} secs')
+                    LOG.error(f'{error_body}: {e}. Timeout for {sleep_timeout} secs')
                     num_attempts += 1
                     time.sleep(sleep_timeout)
-            LOG.error(f'Failed to execute function after {num_retries} attempts')
+            LOG.error(f'Failed to execute function {error_body} after {num_retries} attempts')
             if callback_on_exceeded:
                 if with_self and isinstance(callback_on_exceeded, str):
                     return getattr(self, callback_on_exceeded)(*callback_on_exceeded_args)
