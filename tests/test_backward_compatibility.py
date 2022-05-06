@@ -67,7 +67,7 @@ class TestBackwardCompatibility(unittest.TestCase):
                                              self.connector.callback_func_1,
                                              self.connector.default_error_handler,
                                              False)
-            self.assertIsInstance(self.connector.consumers['test_consumer']['instance'], ConsumerThread)
-            self.assertEqual(self.connector.consumers['test_consumer']['instance'].queue, 'test')
+            self.assertIsInstance(self.connector.consumers['test_consumer'], ConsumerThread)
+            self.assertEqual(self.connector.consumers['test_consumer'].queue, 'test')
         except Exception as ex:
             self.fail(f'Registering consumer failed: {ex}')
