@@ -25,7 +25,7 @@
 # LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
 # NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 # SOFTWARE,  EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-
+import copy
 import time
 import uuid
 import pika
@@ -131,6 +131,7 @@ class MQConnector(ABC):
 
     __run_retries__ = 5
     __max_consumer_restarts__ = 5
+    __consumer_join_timeout__ = 10
 
     def __init__(self, config: Optional[dict], service_name: str):
         """
@@ -353,6 +354,7 @@ class MQConnector(ABC):
                                                             exchange_type=exchange_type, error_func=error_handler,
                                                             auto_ack=auto_ack, name=name, queue_exclusive=queue_exclusive,)
         self.consumer_properties[name]['restart_attempts'] = int(restart_attempts)
+        self.consumer_properties[name]['started'] = False
         self.consumers[name] = ConsumerThread(**self.consumer_properties[name]['properties'])
 
     def restart_consumer(self, name: str):
@@ -425,6 +427,7 @@ class MQConnector(ABC):
             if isinstance(self.consumers.get(name), ConsumerThread) and not self.consumers[name].is_alive():
                 self.consumers[name].daemon = daemon
                 self.consumers[name].start()
+                self.consumer_properties[name]['started'] = True
 
     def stop_consumers(self, names: tuple = ()):
         """
@@ -436,8 +439,9 @@ class MQConnector(ABC):
         for name in names:
             try:
                 if name in list(self.consumers):
-                    self.consumers[name].join()
+                    self.consumers[name].join(timeout=self.__consumer_join_timeout__)
                     self.consumers[name] = None
+                    self.consumer_properties[name]['started'] = False
             except Exception as e:
                 raise ChildProcessError(e)
 
@@ -490,37 +494,40 @@ class MQConnector(ABC):
 
     @property
     def sync_thread(self):
-        """Creates new Repeating Timer if none is present"""
+        """Creates new synchronization thread if none is present"""
         if not (isinstance(self._sync_thread, RepeatingTimer) and self._sync_thread.is_alive()):
             self._sync_thread = RepeatingTimer(self.sync_period, self.sync)
             self._sync_thread.daemon = True
         return self._sync_thread
 
     def stop_sync_thread(self):
-        """Stops Repeating Timer and dereferences it"""
+        """Stops synchronization thread and dereferences it"""
         if self._sync_thread:
             self._sync_thread.cancel()
             self._sync_thread = None
 
     def observe_consumers(self):
+        """ Iteratively observes each consumer, and if it was launched but is not alive - restarts it """
         LOG.debug('Observers state observation')
-        for consumer_name, consumer_instance in self.consumers.items():
-            if not (isinstance(consumer_instance, ConsumerThread)
-                    and consumer_instance.is_alive()
-                    and consumer_instance.is_consuming):
+        consumers_dict = copy.copy(self.consumers)
+        for consumer_name, consumer_instance in consumers_dict.items():
+            if self.consumer_properties[consumer_name]['started'] and \
+                    not (isinstance(consumer_instance, ConsumerThread)
+                         and consumer_instance.is_alive()
+                         and consumer_instance.is_consuming):
                 LOG.info(f'Consumer "{consumer_name}" is dead, restarting')
                 self.restart_consumer(name=consumer_name)
 
     @property
     def observer_thread(self):
-        """Creates new Repeating Timer if none is present"""
+        """Creates new observer thread if none is present"""
         if not (isinstance(self._observer_thread, RepeatingTimer) and self._observer_thread.is_alive()):
             self._observer_thread = RepeatingTimer(self.observe_period, self.observe_consumers)
             self._observer_thread.daemon = True
         return self._observer_thread
 
     def stop_observer_thread(self):
-        """Stops Repeating Timer and dereferences it"""
+        """Stops observer thread and dereferences it"""
         if self._observer_thread:
             self._observer_thread.cancel()
             self._observer_thread = None
