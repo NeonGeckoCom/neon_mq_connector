@@ -440,6 +440,10 @@ class MQConnector(ABC):
             try:
                 if name in list(self.consumers):
                     self.consumers[name].join(timeout=self.__consumer_join_timeout__)
+                    if self.consumers[name].is_alive():
+                        err_msg = f'{name} is alive although was set to join for {self.__consumer_join_timeout__}!'
+                        LOG.error(err_msg)
+                        raise Exception(err_msg)
                     self.consumers[name] = None
                     self.consumer_properties[name]['started'] = False
             except Exception as e:
