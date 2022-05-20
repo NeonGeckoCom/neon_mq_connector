@@ -25,10 +25,10 @@
 # LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
 # NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 # SOFTWARE,  EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-
 import os
 import sys
 import threading
+import time
 import unittest
 import pytest
 
@@ -55,6 +55,14 @@ class MQConnectorChild(MQConnector):
         self.func_2_ok = True
         channel.basic_ack(delivery_tag=method.delivery_tag)
 
+    def callback_func_3(self, channel, method, properties, body):
+        self.func_3_ok = False
+        self.func_3_knocks += 1
+        if self.func_3_knocks == 1:
+            raise Exception('I am failing on the first knock')
+        self.func_3_ok = True
+        self.consume_event.set()
+
     def callback_func_after_message(self, channel, method, properties, body):
         self.consume_event.set()
         self.callback_ok = True
@@ -73,15 +81,30 @@ class MQConnectorChild(MQConnector):
             self._consume_event = threading.Event()
         return self._consume_event
 
+    @property
+    def consumer_restarted_event(self):
+        if not self._consumer_restarted_event or self._consumer_restarted_event.is_set():
+            self._consumer_restarted_event = threading.Event()
+        return self._consumer_restarted_event
+
+    def restart_consumer(self, name: str):
+        super(MQConnectorChild, self).restart_consumer(name=name)
+        if name == 'test3':
+            self.consumer_restarted_event.set()
+
     def __init__(self, config: dict, service_name: str):
         super().__init__(config=config, service_name=service_name)
         self.func_1_ok = False
         self.func_2_ok = False
+        self.func_3_ok = False
+        self.func_3_knocks = 0
         self.callback_ok = False
         self.exception = None
         self._consume_event = None
+        self._consumer_restarted_event = None
+        self.observe_period = 10
         self.register_consumer(name="error", vhost=self.vhost, queue="error", callback=self.callback_func_error,
-                               on_error=self.handle_error, auto_ack=False)
+                               on_error=self.handle_error, auto_ack=False, restart_attempts=0)
 
 
 class MQConnectorChildTest(unittest.TestCase):
@@ -200,3 +223,28 @@ class MQConnectorChildTest(unittest.TestCase):
         mock_method.assert_called_once()
 
         self.connector_instance.publish_message = real_method
+
+    @pytest.mark.timeout(30)
+    def test_consumer_restarted(self):
+        self.connector_instance.register_consumer(name="test3", vhost=self.connector_instance.vhost,
+                                                  exchange='',
+                                                  queue='test_failing_once_queue',
+                                                  callback=self.connector_instance.callback_func_3,
+                                                  restart_attempts=1,
+                                                  auto_ack=False)
+        self.connector_instance.run_consumers(names=('test3',))
+        with self.connector_instance.create_mq_connection(vhost=self.connector_instance.vhost) as mq_conn:
+            self.connector_instance.emit_mq_message(mq_conn,
+                                                    queue='test_failing_once_queue',
+                                                    request_data={'data': 'knock'},
+                                                    exchange='',
+                                                    expiration=4000)
+            self.connector_instance.consumer_restarted_event.wait(self.connector_instance.observe_period + 5)
+            time.sleep(3)
+            self.connector_instance.emit_mq_message(mq_conn,
+                                                    queue='test_failing_once_queue',
+                                                    request_data={'data': 'knock'},
+                                                    exchange='',
+                                                    expiration=4000)
+            self.connector_instance.consume_event.wait(10)
+        self.assertTrue(self.connector_instance.func_3_ok)
