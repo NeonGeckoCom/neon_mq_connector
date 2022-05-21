@@ -300,6 +300,7 @@ class MQConnector(ABC):
         return cls.emit_mq_message(connection=connection, request_data=request_data, exchange=exchange,
                                    queue='', exchange_type='fanout', expiration=expiration)
 
+    @retry(use_self=True, num_retries=__run_retries__)
     def create_mq_connection(self, vhost: str = '/', **kwargs):
         """
             Creates MQ Connection on the specified virtual host
@@ -440,7 +441,7 @@ class MQConnector(ABC):
             try:
                 if name in list(self.consumers):
                     self.consumers[name].join(timeout=self.__consumer_join_timeout__)
-                    if self.consumers[name].is_alive():
+                    if self.consumers[name] and self.consumers[name].is_alive():
                         err_msg = f'{name} is alive although was set to join for {self.__consumer_join_timeout__}!'
                         LOG.error(err_msg)
                         raise Exception(err_msg)
@@ -449,6 +450,7 @@ class MQConnector(ABC):
             except Exception as e:
                 raise ChildProcessError(e)
 
+    @retry(callback_on_exceeded='stop_sync_thread', use_self=True, num_retries=__run_retries__)
     def sync(self, vhost: str = None, exchange: str = None, queue: str = None,
              request_data: dict = None):
         """
