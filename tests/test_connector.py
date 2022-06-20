@@ -142,17 +142,12 @@ class MQConnectorChildTest(unittest.TestCase):
                                                   callback=self.connector_instance.callback_func_2,
                                                   auto_ack=False)
         self.connector_instance.run_consumers(names=test_consumers)
-        with self.connector_instance.create_mq_connection(vhost=self.connector_instance.vhost) as mq_conn:
-            self.connector_instance.emit_mq_message(mq_conn,
-                                                    queue='test',
-                                                    request_data={'data': 'Hello!'},
-                                                    exchange='',
-                                                    expiration=4000)
-            self.connector_instance.emit_mq_message(mq_conn,
-                                                    queue='test1',
-                                                    request_data={'data': 'Hello 2!'},
-                                                    exchange='',
-                                                    expiration=4000)
+        self.connector_instance.send_message(queue='test',
+                                             request_data={'data': 'Hello!'},
+                                             expiration=4000)
+        self.connector_instance.send_message(queue='test1',
+                                             request_data={'data': 'Hello 2!'},
+                                             expiration=4000)
 
         self.connector_instance.consume_event.wait(5)
         self.assertTrue(self.connector_instance.func_1_ok)
@@ -174,34 +169,27 @@ class MQConnectorChildTest(unittest.TestCase):
                                                     callback=self.connector_instance.callback_func_2,
                                                     auto_ack=False)
         self.connector_instance.run_consumers(names=test_consumers)
-        with self.connector_instance.create_mq_connection(vhost=self.connector_instance.vhost) as mq_conn:
-            self.connector_instance.publish_message(mq_conn,
-                                                    exchange='test',
-                                                    request_data={'data': 'Hello!'},
-                                                    expiration=4000)
+        self.connector_instance.send_message(exchange='test',
+                                             exchange_type='fanout',
+                                             request_data={'data': 'Hello!'},
+                                             expiration=4000)
         self.connector_instance.consume_event.wait(5)
         self.assertTrue(self.connector_instance.func_1_ok)
         self.assertTrue(self.connector_instance.func_2_ok)
 
     @pytest.mark.timeout(30)
     def test_error(self):
-        with self.connector_instance.create_mq_connection(vhost=self.connector_instance.vhost) as mq_conn:
-            self.connector_instance.emit_mq_message(mq_conn,
-                                                    queue='error',
-                                                    request_data={'data': 'test'},
-                                                    exchange='',
-                                                    expiration=4000)
+        self.connector_instance.send_message(queue='error',
+                                             request_data={'data': 'test'},
+                                             expiration=4000)
         self.connector_instance.consume_event.wait(5)
         self.assertIsInstance(self.connector_instance.exception, Exception)
         self.assertEqual(str(self.connector_instance.exception), "Exception to Handle")
 
     def test_consumer_after_message(self):
-        with self.connector_instance.create_mq_connection(vhost=self.connector_instance.vhost) as mq_conn:
-            self.connector_instance.emit_mq_message(mq_conn,
-                                                    queue='test3',
-                                                    request_data={'data': 'test'},
-                                                    exchange='',
-                                                    expiration=3000)
+        self.connector_instance.send_message(queue='test3',
+                                             request_data={'data': 'test'},
+                                             expiration=3000)
 
         self.connector_instance.register_consumer("test_consumer_after_message",
                                                   self.connector_instance.vhost, "test3",
@@ -233,18 +221,13 @@ class MQConnectorChildTest(unittest.TestCase):
                                                   restart_attempts=1,
                                                   auto_ack=False)
         self.connector_instance.run_consumers(names=('test3',))
-        with self.connector_instance.create_mq_connection(vhost=self.connector_instance.vhost) as mq_conn:
-            self.connector_instance.emit_mq_message(mq_conn,
-                                                    queue='test_failing_once_queue',
-                                                    request_data={'data': 'knock'},
-                                                    exchange='',
-                                                    expiration=4000)
-            self.connector_instance.consumer_restarted_event.wait(self.connector_instance.observe_period + 5)
-            time.sleep(3)
-            self.connector_instance.emit_mq_message(mq_conn,
-                                                    queue='test_failing_once_queue',
-                                                    request_data={'data': 'knock'},
-                                                    exchange='',
-                                                    expiration=4000)
-            self.connector_instance.consume_event.wait(10)
+        self.connector_instance.send_message(queue='test_failing_once_queue',
+                                             request_data={'data': 'knock'},
+                                             expiration=4000)
+        self.connector_instance.consumer_restarted_event.wait(self.connector_instance.observe_period + 5)
+        time.sleep(3)
+        self.connector_instance.send_message(queue='test_failing_once_queue',
+                                             request_data={'data': 'knock'},
+                                             expiration=4000)
+        self.connector_instance.consume_event.wait(10)
         self.assertTrue(self.connector_instance.func_3_ok)
