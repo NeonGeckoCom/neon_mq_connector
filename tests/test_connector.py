@@ -39,23 +39,27 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from neon_mq_connector.config import Configuration
 from neon_mq_connector.connector import MQConnector, ConsumerThread
 from neon_mq_connector.utils import RepeatingTimer
+from neon_mq_connector.utils.rabbit_utils import create_mq_callback
 
 
 class MQConnectorChild(MQConnector):
 
-    def callback_func_1(self, channel, method, properties, body):
+    @create_mq_callback(include_callback_props=('channel', 'method',))
+    def callback_func_1(self, channel, method):
         if self.func_2_ok:
             self.consume_event.set()
         self.func_1_ok = True
         channel.basic_ack(delivery_tag=method.delivery_tag)
 
-    def callback_func_2(self, channel, method, properties, body):
+    @create_mq_callback(include_callback_props=('channel', 'method',))
+    def callback_func_2(self, channel, method):
         if self.func_1_ok:
             self.consume_event.set()
         self.func_2_ok = True
         channel.basic_ack(delivery_tag=method.delivery_tag)
 
-    def callback_func_3(self, channel, method, properties, body):
+    @create_mq_callback(include_callback_props=())
+    def callback_func_3(self):
         self.func_3_ok = False
         self.func_3_knocks += 1
         if self.func_3_knocks == 1:
@@ -63,7 +67,8 @@ class MQConnectorChild(MQConnector):
         self.func_3_ok = True
         self.consume_event.set()
 
-    def callback_func_after_message(self, channel, method, properties, body):
+    @create_mq_callback(include_callback_props=('channel', 'method',))
+    def callback_func_after_message(self, channel, method):
         self.consume_event.set()
         self.callback_ok = True
         channel.basic_ack(delivery_tag=method.delivery_tag)
