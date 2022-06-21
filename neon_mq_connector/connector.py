@@ -300,6 +300,50 @@ class MQConnector(ABC):
         return cls.emit_mq_message(connection=connection, request_data=request_data, exchange=exchange,
                                    queue='', exchange_type='fanout', expiration=expiration)
 
+    def send_message(self,
+                     request_data: dict,
+                     vhost: str = '',
+                     connection_props: dict = None,
+                     exchange: Optional[str] = '',
+                     queue: Optional[str] = '',
+                     exchange_type: ExchangeType = ExchangeType.direct,
+                     expiration: int = 1000) -> str:
+        """
+            Wrapper method for creation the MQ connection and immediate propagation of requested message with that
+
+            :param request_data: dictionary containing requesting data
+            :param vhost: MQ Virtual Host (if not specified - uses its object native)
+            :param exchange: MQ Exchange name (optional)
+            :param queue: MQ Queue name (optional for ExchangeType.fanout)
+            :param connection_props: supportive connection properties while connection creation (optional)
+            :param exchange_type: type of exchange to use (defaults to ExchangeType.direct)
+            :param expiration: posted data expiration (in millis)
+
+            :returns message_id: id of the propagated message
+        """
+        if not vhost:
+            vhost = self.vhost
+        if not connection_props:
+            connection_props = {}
+        LOG.debug(f'Opening connection on vhost={vhost}')
+        with self.create_mq_connection(vhost=vhost, **connection_props) as mq_conn:
+            if exchange_type in (ExchangeType.fanout, ExchangeType.fanout.value,):
+                LOG.debug('Sending fanout request to MQ')
+                msg_id = self.publish_message(connection=mq_conn,
+                                              request_data=request_data,
+                                              exchange=exchange,
+                                              expiration=expiration)
+            else:
+                LOG.debug(f'Sending {exchange_type} request to MQ')
+                msg_id = self.emit_mq_message(mq_conn,
+                                              queue=queue,
+                                              request_data=request_data,
+                                              exchange=exchange,
+                                              exchange_type=exchange_type,
+                                              expiration=expiration)
+        LOG.info(f'Message propagated, id={msg_id}')
+        return msg_id
+
     @retry(use_self=True, num_retries=__run_retries__)
     def create_mq_connection(self, vhost: str = '/', **kwargs):
         """
