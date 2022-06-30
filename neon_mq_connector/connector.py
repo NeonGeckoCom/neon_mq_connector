@@ -25,6 +25,8 @@
 # LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
 # NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 # SOFTWARE,  EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+import os
 import copy
 import time
 import uuid
@@ -35,7 +37,7 @@ import threading
 from abc import ABC, abstractmethod
 from typing import Optional
 from pika.exchange_type import ExchangeType
-from neon_utils import LOG, os
+from neon_utils.logger import LOG
 from neon_utils.socket_utils import dict_to_b64
 
 from .config import load_neon_mq_config
