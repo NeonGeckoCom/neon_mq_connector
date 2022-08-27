@@ -129,7 +129,7 @@ class ConsumerThread(threading.Thread):
 
 
 class MQConnector(ABC):
-    """Abstract method for attaching services to MQ cluster"""
+    """ Abstract class implementing interface for attaching services to MQ server """
 
     __run_retries__ = 5
     __max_consumer_restarts__ = 5
@@ -148,15 +148,23 @@ class MQConnector(ABC):
     def __init__(self, config: Optional[dict], service_name: str):
         """
             :param config: dictionary with current configurations.
-            ``` JSON Template of configuration:
 
-                     { "users": {"<service_name>": { "user": "<username>",
-                                                     "password": "<password>" }
-                                },
-                       "server": "localhost",
-                       "port": 5672
-                     }
-            ```
+            JSON Template of :param config :
+
+            {
+                "users": {
+                    "<service_name>": {
+                        "user": "<username of the service on mq server>",
+                        "password": "<password of the service on mq server>"
+                    }
+                },
+                "server": "<MQ Server IP>",
+                "port": <MQ Server Port (default=5672)>,
+                "<self.property_key (default='properties')>": {
+                    <key of the configurable property>:<value of the configurable property>
+                }
+            }
+
             :param service_name: name of current service
        """
         self.config = config
