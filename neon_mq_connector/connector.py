@@ -170,7 +170,7 @@ class MQConnector(ABC):
         self._vhost = None
         self._sync_thread = None
         self._observer_thread = None
-        self.init_configurable_properties()
+        self.__init_configurable_properties()
 
     @property
     def config(self):
@@ -189,8 +189,8 @@ class MQConnector(ABC):
     def __basic_configurable_properties(self) -> Dict[str, Any]:
         """
             Mapping of basic configurable properties to their default values.
-            WARNING: This method should be left untouched to prevent unexpected behaviour;
-                     To override values of the basic properties specify it in self.configurable_properties()
+            \nWARNING: This method should be left untouched to prevent unexpected behaviour;
+            To override values of the basic properties specify it in self.configurable_properties()
         """
         return {
                 'sync_period': 10,  # in seconds
@@ -214,12 +214,14 @@ class MQConnector(ABC):
     def __configurable_properties(self):
         """
             Joins basic configurable properties with appended once
-            WARNING: This method should be left untouched to prevent unexpected behaviour
+            \nWARNING: This method should NOT be modified by children to prevent unexpected behaviour
         """
         return {**self.__basic_configurable_properties, **self.configurable_properties}
 
-    def init_configurable_properties(self):
-        """ Initialize properties based on the config and configurable properties """
+    def __init_configurable_properties(self):
+        """ Initialize properties based on the config and configurable properties
+            \nWARNING: This method should NOT be modified by children to prevent unexpected behaviour
+        """
         for _property, default_value in self.__configurable_properties.items():
             setattr(self, _property, self.service_config.get(self.property_key, {}).get(_property, default_value))
 
