@@ -75,13 +75,14 @@ class ConsumerThread(threading.Thread):
             to learn more about different exchanges
         """
         threading.Thread.__init__(self, *args, **kwargs)
+        self.init_event = threading.Event()
         self.is_consuming = False
-        self.connection = pika.BlockingConnection(connection_params)
         self.callback_func = callback_func
         self.error_func = error_func
         self.exchange = exchange or ''
         self.exchange_type = exchange_type or ExchangeType.direct
         self.queue = queue or ''
+        self.connection = pika.BlockingConnection(connection_params)
         self.channel = self.connection.channel()
         self.channel.basic_qos(prefetch_count=50)
         if queue_reset:
@@ -100,28 +101,35 @@ class ConsumerThread(threading.Thread):
         self.channel.basic_consume(on_message_callback=self.callback_func,
                                    queue=self.queue,
                                    auto_ack=auto_ack)
+        self.init_event.set()
 
     def run(self):
         """Creating consumer channel"""
-        super(ConsumerThread, self).run()
-        try:
-            self.is_consuming = True
-            self.channel.start_consuming()
-        except pika.exceptions.ChannelClosed:
-            LOG.debug(f"Channel closed by broker: {self.callback_func}")
-        except Exception as e:
-            LOG.error(e)
-            self.error_func(self, e)
+        if self.init_event.is_set():
+            super(ConsumerThread, self).run()
+            try:
+                self.is_consuming = True
+                self.channel.start_consuming()
+            except pika.exceptions.ChannelClosed:
+                LOG.debug(f"Channel closed by broker: {self.callback_func}")
+            except Exception as e:
+                LOG.error(e)
+                self.error_func(self, e)
+        else:
+            LOG.warning('ConsumerThread is not yet initialized')
 
     def join(self, timeout: Optional[float] = ...) -> None:
         """Terminating consumer channel"""
         try:
-            self.channel.stop_consuming()
-            self.is_consuming = False
-            if self.channel.is_open:
-                self.channel.close()
-            if self.connection.is_open:
-                self.connection.close()
+            if self.channel:
+                self.channel.stop_consuming()
+                self.is_consuming = False
+                if self.channel.is_open:
+                    self.channel.close()
+                if self.connection.is_open:
+                    self.connection.close()
+            else:
+                LOG.warning('Channel is not yet initialized')
         except Exception as x:
             LOG.error(x)
         finally:
