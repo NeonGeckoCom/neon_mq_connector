@@ -35,7 +35,7 @@ import pika.exceptions
 import threading
 
 from abc import ABC, abstractmethod
-from typing import Optional
+from typing import Optional, Dict, Any
 from pika.exchange_type import ExchangeType
 from neon_utils.logger import LOG
 from neon_utils.socket_utils import dict_to_b64
@@ -129,47 +129,112 @@ class ConsumerThread(threading.Thread):
 
 
 class MQConnector(ABC):
-    """Abstract method for attaching services to MQ cluster"""
+    """ Abstract class implementing interface for attaching services to MQ server """
 
     __run_retries__ = 5
     __max_consumer_restarts__ = 5
     __consumer_join_timeout__ = 10
 
+    @staticmethod
+    def init_config(config: dict) -> dict:
+        """ Initialize config from source data """
+        config = config or load_neon_mq_config()
+        config = config.get('MQ') or config
+        return config
+
     def __init__(self, config: Optional[dict], service_name: str):
         """
             :param config: dictionary with current configurations.
-            ``` JSON Template of configuration:
 
-                     { "users": {"<service_name>": { "user": "<username>",
-                                                     "password": "<password>" }
-                                },
-                       "server": "localhost",
-                       "port": 5672
-                     }
-            ```
+            JSON Template of :param config :
+
+            {
+                "users": {
+                    "<service_name>": {
+                        "user": "<username of the service on mq server>",
+                        "password": "<password of the service on mq server>"
+                    }
+                },
+                "server": "<MQ Server IP>",
+                "port": <MQ Server Port (default=5672)>,
+                "<self.property_key (default='properties')>": {
+                    <key of the configurable property>:<value of the configurable property>
+                }
+            }
+
             :param service_name: name of current service
        """
-        self.config = config or load_neon_mq_config()
-        if self.config.get("MQ"):
-            self.config = self.config["MQ"]
-        self._service_id = self.create_unique_id()
+        self.config = config
+        # Override self.property_key BEFORE base __init__ to initialise properties under customized config location
+        if not hasattr(self, 'property_key'):
+            self.property_key = 'properties'
+        self._service_id = None
         self.service_name = service_name
         self.consumers = dict()
         self.consumer_properties = dict()
-        self.sync_period = 10  # in seconds
-        self.observe_period = 20  # in seconds
-        self._vhost = '/'
-        self.default_testing_prefix = 'test'
-        # order matters
-        self.testing_envs = (f'{self.service_name.upper()}_TESTING', 'MQ_TESTING',)
-        # order matters
-        self.testing_prefix_envs = (f'{self.service_name.upper()}_TESTING_PREFIX', 'MQ_TESTING_PREFIX',)
+        self._vhost = None
         self._sync_thread = None
         self._observer_thread = None
+        self.__init_configurable_properties()
+
+    @property
+    def config(self):
+        return self._config
+
+    @config.setter
+    def config(self, new_config: dict):
+        self._config = self.init_config(config=new_config)
+
+    @property
+    def service_config(self) -> dict:
+        """ Returns current service config """
+        return self.config['users'][self.service_name]
+
+    @property
+    def __basic_configurable_properties(self) -> Dict[str, Any]:
+        """
+            Mapping of basic configurable properties to their default values.
+            WARNING: This method should be left untouched to prevent unexpected behaviour;
+            To override values of the basic properties specify it in self.service_configurable_properties()
+        """
+        return {
+                'sync_period': 10,  # in seconds
+                'observe_period': 20,  # in seconds
+                'vhost_prefix': '',  # Could be used for scalability purposes
+                'default_testing_prefix': 'test',
+                'testing_envs': (f'{self.service_name.upper()}_TESTING', 'MQ_TESTING',),  # order matters
+                'testing_prefix_envs': (f'{self.service_name.upper()}_TESTING_PREFIX', 'MQ_TESTING_PREFIX',)  # order matters
+                }
+
+    @property
+    def service_configurable_properties(self) -> Dict[str, Any]:
+        """
+            Mapping of service-related configurable properties to their default values.
+
+            Override to provide service-specific configurable properties AND to update the default values of basic properties
+        """
+        return {}
+
+    @property
+    def __configurable_properties(self):
+        """
+            Joins basic configurable properties with appended once
+            WARNING: This method should NOT be modified by children to prevent unexpected behaviour
+        """
+        return {**self.__basic_configurable_properties, **self.service_configurable_properties}
+
+    def __init_configurable_properties(self):
+        """ Initialize properties based on the config and configurable properties
+            WARNING: This method should NOT be modified by children to prevent unexpected behaviour
+        """
+        for _property, default_value in self.__configurable_properties.items():
+            setattr(self, _property, self.service_config.get(self.property_key, {}).get(_property, default_value))
 
     @property
     def service_id(self):
         """ID of the service should be considered to be unique"""
+        if not self._service_id:
+            self._service_id = self.create_unique_id()
         return self._service_id
 
     @property
@@ -177,11 +242,11 @@ class MQConnector(ABC):
         """
         Returns MQ Credentials object based on self.config values
         """
-        if not self.config:
+        if not self.service_config:
             raise Exception('Configuration is not set')
         return pika.PlainCredentials(
-            self.config['users'][self.service_name].get('user', 'guest'),
-            self.config['users'][self.service_name].get('password', 'guest'))
+            self.service_config.get('user', 'guest'),
+            self.service_config.get('password', 'guest'))
 
     @property
     def testing_mode(self) -> bool:
@@ -202,10 +267,12 @@ class MQConnector(ABC):
     def vhost(self):
         if not self._vhost:
             self._vhost = '/'
+        if self.vhost_prefix and self.vhost_prefix not in self._vhost.split('_')[0]:
+            self._vhost = f'/{self.vhost_prefix}_{self._vhost[1:]}'
         if self.testing_mode and self.testing_prefix not in self._vhost.split('_')[0]:
             self._vhost = f'/{self.testing_prefix}_{self._vhost[1:]}'
-            if self._vhost.endswith('_'):
-                self._vhost = self._vhost[:-1]
+        if self._vhost.endswith('_'):
+            self._vhost = self._vhost[:-1]
         return self._vhost
 
     @vhost.setter
