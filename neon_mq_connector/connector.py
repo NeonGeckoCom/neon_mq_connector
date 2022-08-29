@@ -268,14 +268,14 @@ class MQConnector(ABC):
 
     @property
     def vhost(self):
-        if self._vhost is None:
+        if not self._vhost:
             self._vhost = '/'
-            if self.vhost_prefix and self.vhost_prefix not in self._vhost.split('_')[0]:
-                self._vhost = f'/{self.vhost_prefix}_{self._vhost[1:]}'
-            if self.testing_mode and self.testing_prefix not in self._vhost.split('_')[0]:
-                self._vhost = f'/{self.testing_prefix}_{self._vhost[1:]}'
-            if self._vhost.endswith('_'):
-                self._vhost = self._vhost[:-1]
+        if self.vhost_prefix and self.vhost_prefix not in self._vhost.split('_')[0]:
+            self._vhost = f'/{self.vhost_prefix}_{self._vhost[1:]}'
+        if self.testing_mode and self.testing_prefix not in self._vhost.split('_')[0]:
+            self._vhost = f'/{self.testing_prefix}_{self._vhost[1:]}'
+        if self._vhost.endswith('_'):
+            self._vhost = self._vhost[:-1]
         return self._vhost
 
     @vhost.setter
