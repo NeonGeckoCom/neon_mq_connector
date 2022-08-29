@@ -139,10 +139,7 @@ class MQConnector(ABC):
     def init_config(config: dict) -> dict:
         """ Initialize config from source data """
         config = config or load_neon_mq_config()
-        if config.get('MQ'):
-            config = config['MQ']
-        else:
-            LOG.warning('Initialising MQ Connector config outside "MQ" prefix')
+        config = config.get('MQ') or config
         return config
 
     def __init__(self, config: Optional[dict], service_name: str):
