@@ -194,7 +194,7 @@ class MQConnector(ABC):
     def __basic_configurable_properties(self) -> Dict[str, Any]:
         """
             Mapping of basic configurable properties to their default values.
-            \nWARNING: This method should be left untouched to prevent unexpected behaviour;
+            WARNING: This method should be left untouched to prevent unexpected behaviour;
             To override values of the basic properties specify it in self.service_configurable_properties()
         """
         return {
@@ -219,13 +219,13 @@ class MQConnector(ABC):
     def __configurable_properties(self):
         """
             Joins basic configurable properties with appended once
-            \nWARNING: This method should NOT be modified by children to prevent unexpected behaviour
+            WARNING: This method should NOT be modified by children to prevent unexpected behaviour
         """
         return {**self.__basic_configurable_properties, **self.service_configurable_properties}
 
     def __init_configurable_properties(self):
         """ Initialize properties based on the config and configurable properties
-            \nWARNING: This method should NOT be modified by children to prevent unexpected behaviour
+            WARNING: This method should NOT be modified by children to prevent unexpected behaviour
         """
         for _property, default_value in self.__configurable_properties.items():
             setattr(self, _property, self.service_config.get(self.property_key, {}).get(_property, default_value))
