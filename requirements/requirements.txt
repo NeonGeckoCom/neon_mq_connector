@@ -1,2 +1,2 @@
 pika==1.2.0
-neon_utils[network]>=0.14,<2.0
+neon_utils[network]~=1.0
