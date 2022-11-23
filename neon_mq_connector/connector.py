@@ -155,7 +155,7 @@ class MQConnector(ABC):
                         "password": "<password of the service on mq server>"
                     }
                 },
-                "server": "<MQ Server IP>",
+                "server": "<MQ Server hostname or IP>",
                 "port": <MQ Server Port (default=5672)>,
                 "<self.property_key (default='properties')>": {
                     <key of the configurable property>:<value of the configurable property>
