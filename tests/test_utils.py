@@ -129,7 +129,7 @@ class TestMQConnectorUtils(unittest.TestCase):
 
     def test_wait_for_mq_startup(self):
         self.assertTrue(wait_for_mq_startup("api.neon.ai", 5672))
-        self.assertFalse(wait_for_mq_startup("api.neon.ai", 443, 1))
+        self.assertFalse(wait_for_mq_startup("www.neon.ai", 5672, 1))
 
     def setUp(self) -> None:
         self.counter = 0
