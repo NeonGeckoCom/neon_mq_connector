@@ -132,7 +132,7 @@ class MQConnector(ABC):
     """ Abstract class implementing interface for attaching services to MQ server """
 
     __run_retries__ = 5
-    __max_consumer_restarts__ = 5
+    __max_consumer_restarts__ = -1
     __consumer_join_timeout__ = 10
 
     @staticmethod
