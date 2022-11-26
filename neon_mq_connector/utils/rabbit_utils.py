@@ -1,6 +1,7 @@
 from functools import wraps
 
 from neon_utils.socket_utils import b64_to_dict
+from neon_utils.logger import LOG
 
 
 def create_mq_callback(include_callback_props: tuple = ('body',)):
@@ -28,7 +29,12 @@ def create_mq_callback(include_callback_props: tuple = ('body',)):
                             raise TypeError(f'Invalid body received, expected: bytes string; got: {type(value)}')
                     else:
                         callback_kwargs[mq_props[idx]] = value
-            return f(self, **callback_kwargs)
+            try:
+                res = f(self, **callback_kwargs)
+            except Exception as ex:
+                LOG.error(f'Execution of {f.__name__} failed due to exception={ex}')
+                res = None
+            return res
 
         return wrapped
 
