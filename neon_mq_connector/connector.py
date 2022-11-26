@@ -155,7 +155,7 @@ class MQConnector(ABC):
                         "password": "<password of the service on mq server>"
                     }
                 },
-                "server": "<MQ Server IP>",
+                "server": "<MQ Server hostname or IP>",
                 "port": <MQ Server Port (default=5672)>,
                 "<self.property_key (default='properties')>": {
                     <key of the configurable property>:<value of the configurable property>
@@ -450,7 +450,7 @@ class MQConnector(ABC):
         :param auto_ack: Boolean to enable ack of messages upon receipt
         :param queue_exclusive: if Queue needs to be exclusive
         :param skip_on_existing: to skip if consumer already exists
-        :param restart_attempts: max instance restart attempts
+        :param restart_attempts: max instance restart attempts (if < 0 - will restart infinitely times)
         """
         error_handler = on_error or self.default_error_handler
         consumer = self.consumers.get(name, None)
@@ -474,10 +474,10 @@ class MQConnector(ABC):
     def restart_consumer(self, name: str):
         self.stop_consumers(names=(name,))
         consumer_data = self.consumer_properties.get(name, {})
+        restart_attempts = consumer_data.get('restart_attempts', self.__max_consumer_restarts__)
         if not consumer_data.get('properties'):
             err_msg = 'creation properties not found'
-        elif consumer_data.get('num_restarted', 0) > consumer_data.get('restart_attempts',
-                                                                       self.__max_consumer_restarts__):
+        elif 0 < restart_attempts < consumer_data.get('num_restarted', 0):
             err_msg = 'num restarts exceeded'
         else:
             self.consumers[name] = ConsumerThread(**consumer_data['properties'])
@@ -493,21 +493,23 @@ class MQConnector(ABC):
                             on_error: Optional[callable] = None,
                             exchange: str = None, exchange_reset: bool = False,
                             auto_ack: bool = True,
-                            skip_on_existing: bool = False):
+                            skip_on_existing: bool = False,
+                            restart_attempts: int = __max_consumer_restarts__):
         """
-        Registers fanout exchange subscriber, wraps register_consumer()
-        Any raised exceptions will be passed as arguments to on_error.
-        :param name: Human readable name of the consumer
-        :param vhost: vhost to register on
-        :param exchange: MQ Exchange to bind to
-        :param exchange_reset: to delete exchange if exists
-            (defaults to False)
-        :param callback: Method to passed queued messages to
-        :param on_error: Optional method to handle any exceptions raised
-            in message handling
-        :param auto_ack: Boolean to enable ack of messages upon receipt
-        :param skip_on_existing: to skip if consumer already exists
-            (defaults to False)
+            Registers fanout exchange subscriber, wraps register_consumer()
+            Any raised exceptions will be passed as arguments to on_error.
+            :param name: Human readable name of the consumer
+            :param vhost: vhost to register on
+            :param exchange: MQ Exchange to bind to
+            :param exchange_reset: to delete exchange if exists
+                (defaults to False)
+            :param callback: Method to passed queued messages to
+            :param on_error: Optional method to handle any exceptions raised
+                in message handling
+            :param auto_ack: Boolean to enable ack of messages upon receipt
+            :param skip_on_existing: to skip if consumer already exists
+                (defaults to False)
+            :param restart_attempts: max instance restart attempts (if < 0 - will restart infinitely times)
         """
         # for fanout exchange queue does not matter unless its non-conflicting
         # and is binded
@@ -521,7 +523,8 @@ class MQConnector(ABC):
                                       exchange_type=ExchangeType.fanout.value,
                                       exchange_reset=exchange_reset,
                                       auto_ack=auto_ack, queue_exclusive=True,
-                                      skip_on_existing=skip_on_existing)
+                                      skip_on_existing=skip_on_existing,
+                                      restart_attempts=restart_attempts)
 
     @staticmethod
     def default_error_handler(thread: ConsumerThread, exception: Exception):
