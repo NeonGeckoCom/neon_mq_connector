@@ -50,7 +50,7 @@ class TestBackwardCompatibility(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls) -> None:
-        file_path = os.environ.get('CONNECTOR_CONFIG', "~/.local/share/neon/credentials.json")
+        file_path = os.path.join(os.path.dirname(__file__), "test_config.json")
         cls.connector = OldMQConnectorChild(config=Configuration(file_path=file_path).config_data,
                                             service_name='test')
         cls.connector.run(run_sync=False)

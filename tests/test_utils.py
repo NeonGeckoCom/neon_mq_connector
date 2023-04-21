@@ -33,19 +33,28 @@ import unittest
 import pika
 
 from threading import Thread
-from neon_utils.socket_utils import dict_to_b64, b64_to_dict
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from neon_mq_connector.utils import RepeatingTimer
-from neon_mq_connector.utils.connection_utils import get_timeout, retry, wait_for_mq_startup
+from neon_mq_connector.utils.connection_utils import get_timeout, retry, \
+    wait_for_mq_startup
 from neon_mq_connector.utils.client_utils import MQConnector
-
+from neon_mq_connector.utils.network_utils import dict_to_b64, b64_to_dict
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 TEST_PATH = os.path.join(ROOT_DIR, "tests", "ccl_files")
 
 INPUT_CHANNEL = str(time.time())
 OUTPUT_CHANNEL = str(time.time())
+
+TEST_DICT = {b"section 1": {"key1": "val1",
+                            "key2": "val2"},
+             "section 2": {"key_1": b"val1",
+                           "key_2": f"val2"}}
+
+TEST_DICT_B64 = b'IntiJ3NlY3Rpb24gMSc6IHsna2V5MSc6ICd2YWwxJywgJ2tleTInOiAndm' \
+                b'FsMid9LCAnc2VjdGlvbiAyJzogeydrZXlfMSc6IGIndmFsMScsICdrZXlfM' \
+                b'ic6ICd2YWwyJ319Ig=='
 
 
 def callback_on_failure():
@@ -214,3 +223,22 @@ class MqUtilTests(unittest.TestCase):
         from neon_mq_connector.utils.client_utils import send_mq_request
         with self.assertRaises(ValueError):
             send_mq_request("invalid_endpoint", {}, "test", "test", timeout=5)
+
+
+class TestNetworkUtils(unittest.TestCase):
+    def test_dict_to_b64(self):
+        b64_str = dict_to_b64(TEST_DICT)
+        self.assertIsInstance(b64_str, bytes)
+        self.assertTrue(len(b64_str) > 0)
+        self.assertEqual(b64_str, TEST_DICT_B64)
+
+    def test_b64_to_dict(self):
+        result_dict = b64_to_dict(TEST_DICT_B64)
+        self.assertIsInstance(result_dict, dict)
+        self.assertTrue(len(list(result_dict)) > 0)
+        self.assertEqual(result_dict, TEST_DICT)
+
+    def test_check_port_is_open(self):
+        from neon_mq_connector.utils.network_utils import check_port_is_open
+        self.assertTrue(check_port_is_open("api.neon.ai", 5672))
+        self.assertFalse(check_port_is_open("www.neon.ai", 5672))

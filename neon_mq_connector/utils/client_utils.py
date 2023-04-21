@@ -34,10 +34,11 @@ from pika.channel import Channel
 from pika.exceptions import ProbableAccessDeniedError, StreamLostError
 from neon_mq_connector.connector import MQConnector
 from ovos_config.config import Configuration
+from ovos_utils.log import LOG
 
-from neon_utils.logger import LOG
-from neon_utils.socket_utils import b64_to_dict
+from neon_mq_connector.utils.network_utils import b64_to_dict
 
+# TODO: Leave below to configuration
 logging.getLogger("pika").setLevel(logging.CRITICAL)
 
 _default_mq_config = {

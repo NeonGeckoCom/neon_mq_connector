@@ -33,7 +33,7 @@ import unittest
 import pytest
 
 from mock.mock import Mock
-from neon_utils import LOG
+from ovos_utils.log import LOG
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from neon_mq_connector.config import Configuration
@@ -116,9 +116,10 @@ class MQConnectorChild(MQConnector):
 class MQConnectorChildTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        file_path = os.environ.get('CONNECTOR_CONFIG', "~/.local/share/neon/credentials.json")
-        cls.connector_instance = MQConnectorChild(config=Configuration(file_path=file_path).config_data,
-                                                  service_name='test')
+        file_path = os.path.join(os.path.dirname(__file__), "test_config.json")
+        cls.connector_instance = MQConnectorChild(
+            config=Configuration(file_path=file_path).config_data,
+            service_name='test')
         cls.connector_instance.run(run_sync=False)
 
     @classmethod
