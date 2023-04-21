@@ -26,5 +26,7 @@
 # NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 # SOFTWARE,  EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-from .thread_utils import RepeatingTimer
-from .connection_utils import retry, wait_for_mq_startup
+from neon_mq_connector.utils.thread_utils import RepeatingTimer
+from neon_mq_connector.utils.connection_utils import retry, wait_for_mq_startup
+
+# TODO: Deprecate wrapped imports
