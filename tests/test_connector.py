@@ -30,6 +30,7 @@ import sys
 import threading
 import time
 import unittest
+import pika
 import pytest
 
 from mock.mock import Mock
@@ -238,3 +239,45 @@ class MQConnectorChildTest(unittest.TestCase):
                                              expiration=4000)
         self.connector_instance.consume_event.wait(10)
         self.assertTrue(self.connector_instance.func_3_ok)
+
+
+class TestMQConnectorInit(unittest.TestCase):
+    def test_connector_init(self):
+        connector = MQConnector(None, "test")
+        self.assertEqual(connector.service_name, "test")
+        self.assertEqual(connector.consumers, dict())
+        self.assertEqual(connector.consumer_properties, dict())
+
+        # Test properties
+        self.assertIsInstance(connector.config, dict)
+        test_config = {"test": {"username": "test",
+                                "password": "test"}}
+        connector.config = test_config
+        self.assertEqual(connector.config, test_config)
+        connector.config = {"MQ": test_config}
+        self.assertEqual(connector.config, test_config)
+
+        self.assertIsInstance(connector.service_configurable_properties, dict)
+        self.assertIsInstance(connector.service_id, str)
+
+        # Test credentials
+        with self.assertRaises(Exception):
+            connector.mq_credentials
+        connector.config = {"MQ": {"users": {"test": {"user": "username",
+                                                      "password": "test"}}}}
+        creds = connector.mq_credentials
+        self.assertIsInstance(creds, pika.PlainCredentials)
+        self.assertEqual(creds.username, "username")
+        self.assertEqual(creds.password, "test")
+
+        # Testing test vars
+        self.assertIsInstance(connector.testing_mode, bool)
+        self.assertIsInstance(connector.testing_prefix, bool)
+
+        self.assertEqual(connector.vhost, '/')
+        test_vhost = "/testing"
+        connector.vhost = "testing"
+        self.assertEqual(connector.vhost, test_vhost)
+        connector.vhost = "/testing"
+        self.assertEqual(connector.vhost, test_vhost)
+    # TODO: test other methods
