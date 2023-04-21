@@ -43,6 +43,21 @@ from neon_mq_connector.utils.rabbit_utils import create_mq_callback
 
 
 class MQConnectorChild(MQConnector):
+    def __init__(self, config: dict, service_name: str):
+        super().__init__(config=config, service_name=service_name)
+        self.func_1_ok = False
+        self.func_2_ok = False
+        self.func_3_ok = False
+        self.func_3_knocks = 0
+        self.callback_ok = False
+        self.exception = None
+        self._consume_event = None
+        self._consumer_restarted_event = None
+        self.observe_period = 10
+        self.register_consumer(name="error", vhost=self.vhost, queue="error",
+                               callback=self.callback_func_error,
+                               on_error=self.handle_error, auto_ack=False,
+                               restart_attempts=0)
 
     @create_mq_callback(include_callback_props=('channel', 'method',))
     def callback_func_1(self, channel, method):
@@ -96,20 +111,6 @@ class MQConnectorChild(MQConnector):
         super(MQConnectorChild, self).restart_consumer(name=name)
         if name == 'test3':
             self.consumer_restarted_event.set()
-
-    def __init__(self, config: dict, service_name: str):
-        super().__init__(config=config, service_name=service_name)
-        self.func_1_ok = False
-        self.func_2_ok = False
-        self.func_3_ok = False
-        self.func_3_knocks = 0
-        self.callback_ok = False
-        self.exception = None
-        self._consume_event = None
-        self._consumer_restarted_event = None
-        self.observe_period = 10
-        self.register_consumer(name="error", vhost=self.vhost, queue="error", callback=self.callback_func_error,
-                               on_error=self.handle_error, auto_ack=False, restart_attempts=0)
 
 
 class MQConnectorChildTest(unittest.TestCase):

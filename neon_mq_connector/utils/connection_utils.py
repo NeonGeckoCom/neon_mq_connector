@@ -53,7 +53,7 @@ def get_timeout(backoff_factor: float, number_of_retries: int) -> float:
 
 
 def retry(callback_on_exceeded: Union[str, Callable] = None, callback_on_attempt_failure: Union[str, Callable] = None,
-          num_retries: int = 3, backoff_factor: int = 5, use_self: bool = False,
+          num_retries: int = 3, backoff_factor: float = 5, use_self: bool = False,
           callback_on_attempt_failure_args: list = None, callback_on_exceeded_args: list = None):
     """
         Decorator for generic retrying function execution
