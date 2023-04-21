@@ -166,7 +166,7 @@ class MQConnector(ABC):
 
             :param service_name: name of current service
        """
-        self.config = config
+        self._config = config
         # Override self.property_key BEFORE base __init__ to initialise
         # properties under customized config location
         if not hasattr(self, 'property_key'):
