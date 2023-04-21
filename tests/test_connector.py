@@ -272,7 +272,7 @@ class TestMQConnectorInit(unittest.TestCase):
 
         # Testing test vars
         self.assertIsInstance(connector.testing_mode, bool)
-        self.assertIsInstance(connector.testing_prefix, bool)
+        self.assertIsInstance(connector.testing_prefix, str)
 
         self.assertEqual(connector.vhost, '/')
         test_vhost = "/testing"
