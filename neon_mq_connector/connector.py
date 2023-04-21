@@ -138,9 +138,9 @@ class MQConnector(ABC):
     __consumer_join_timeout__ = 10
 
     @staticmethod
-    def init_config(config: dict) -> dict:
+    def init_config(config: Optional[dict] = None) -> dict:
         """ Initialize config from source data """
-        config = config or load_neon_mq_config()
+        config = config or load_neon_mq_config() or dict()
         config = config.get('MQ') or config
         return config
 
@@ -182,6 +182,8 @@ class MQConnector(ABC):
 
     @property
     def config(self):
+        if not self._config:
+            self._config = self.init_config()
         return self._config
 
     @config.setter
@@ -191,7 +193,7 @@ class MQConnector(ABC):
     @property
     def service_config(self) -> dict:
         """ Returns current service config """
-        return self.config['users'][self.service_name]
+        return self.config.get('users', {}).get(self.service_name) or dict()
 
     @property
     def __basic_configurable_properties(self) -> Dict[str, Any]:
@@ -257,7 +259,7 @@ class MQConnector(ABC):
         """
         Returns MQ Credentials object based on self.config values
         """
-        if not self.service_config:
+        if not self.service_config or self.service_config == dict():
             raise Exception('Configuration is not set')
         return pika.PlainCredentials(
             self.service_config.get('user', 'guest'),
