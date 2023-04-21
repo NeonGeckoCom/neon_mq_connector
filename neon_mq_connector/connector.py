@@ -34,13 +34,14 @@ import pika
 import pika.exceptions
 import threading
 
-from abc import ABC, abstractmethod
+from abc import ABC
 from typing import Optional, Dict, Any
 from pika.exchange_type import ExchangeType
 from ovos_utils.log import LOG
 
 from neon_mq_connector.config import load_neon_mq_config
 from neon_mq_connector.utils import RepeatingTimer, retry, wait_for_mq_startup
+from neon_mq_connector.utils.network_utils import dict_to_b64
 
 
 class ConsumerThread(threading.Thread):

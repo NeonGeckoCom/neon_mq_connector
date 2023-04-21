@@ -37,9 +37,10 @@ from threading import Thread
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from neon_mq_connector.utils import RepeatingTimer
-from neon_mq_connector.utils.connection_utils import get_timeout, retry, wait_for_mq_startup
+from neon_mq_connector.utils.connection_utils import get_timeout, retry, \
+    wait_for_mq_startup
 from neon_mq_connector.utils.client_utils import MQConnector
-
+from neon_mq_connector.utils.network_utils import dict_to_b64, b64_to_dict
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 TEST_PATH = os.path.join(ROOT_DIR, "tests", "ccl_files")
 
@@ -68,8 +69,6 @@ class TestMQConnector(MQConnector):
 
     @staticmethod
     def respond(channel, method, _, body):
-        from neon_mq_connector.utils.network_utils import dict_to_b64, \
-            b64_to_dict
         request = b64_to_dict(body)
         response = dict_to_b64({"message_id": request["message_id"],
                                 "success": True,
@@ -228,14 +227,12 @@ class MqUtilTests(unittest.TestCase):
 
 class TestNetworkUtils(unittest.TestCase):
     def test_dict_to_b64(self):
-        from neon_mq_connector.utils.network_utils import dict_to_b64
         b64_str = dict_to_b64(TEST_DICT)
         self.assertIsInstance(b64_str, bytes)
         self.assertTrue(len(b64_str) > 0)
         self.assertEqual(b64_str, TEST_DICT_B64)
 
     def test_b64_to_dict(self):
-        from neon_mq_connector.utils.network_utils import b64_to_dict
         result_dict = b64_to_dict(TEST_DICT_B64)
         self.assertIsInstance(result_dict, dict)
         self.assertTrue(len(list(result_dict)) > 0)

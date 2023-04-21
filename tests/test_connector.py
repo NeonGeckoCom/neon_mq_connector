@@ -33,7 +33,7 @@ import unittest
 import pytest
 
 from mock.mock import Mock
-from neon_utils import LOG
+from ovos_utils.log import LOG
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from neon_mq_connector.config import Configuration
