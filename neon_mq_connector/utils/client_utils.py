@@ -109,7 +109,11 @@ def send_mq_request(vhost: str, request_data: dict, target_queue: str,
             LOG.debug(f"Ignoring {api_output_msg_id} waiting for {message_id}")
 
     try:
-        config = dict(Configuration()).get('MQ') or _default_mq_config
+        config = Configuration().get('MQ') or _default_mq_config
+        if not config['users'].get('mq_handler'):
+            LOG.warning("mq_handler not configured, using default credentials")
+            config['users']['mq_handler'] = \
+                _default_mq_config['users']['mq_handler']
         neon_api_mq_handler = NeonMQHandler(config=config,
                                             service_name='mq_handler',
                                             vhost=vhost)
@@ -138,5 +142,5 @@ def send_mq_request(vhost: str, request_data: dict, target_queue: str,
         raise ValueError(f"{vhost} is not a valid endpoint for "
                          f"{config.get('users').get('mq_handler').get('user')}")
     except Exception as ex:
-        LOG.error(f'Exception occurred while resolving Neon API: {ex}')
+        LOG.exception(f'Exception occurred while resolving Neon API: {ex}')
     return response_data

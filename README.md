@@ -2,6 +2,11 @@
 The Neon MQ Connector is an MQ interface for microservices.
 
 ## Configuration
+By default, this package will use [ovos-config](https://github.com/openvoiceos/ovos-config)
+to read default configuration. In general, configuration should be passed to the
+`MQConnector` object at init.
+
+### Legacy Configuration
 A global configuration for the MQ Connector may be specified at `~/.config/neon/mq_config.json`. This configuration file 
 may contain the following keys:
  - `server`: The hostname or IP address of the MQ server to connect to. If left blank, this defaults to `"localhost"`

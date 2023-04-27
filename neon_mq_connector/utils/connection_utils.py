@@ -146,8 +146,10 @@ def wait_for_mq_startup(addr: str, port: int, timeout: int = 60) -> bool:
     :param timeout: Max seconds to wait for connection to come online
     """
     stop_time = time.time() + timeout
+    LOG.debug(f"Waiting for MQ server at {addr}:{port} to come online")
     while not check_port_is_open(addr, port):
-        LOG.debug("Waiting for MQ server to come online")
         if time.time() > stop_time:
+            LOG.warning(f"Timed out waiting after {timeout}s")
             return False
+    LOG.info("MQ Server Started")
     return True

@@ -29,7 +29,9 @@
 import os
 import json
 from typing import Optional
-# TODO: Implement ovos-config
+from ovos_utils.log import LOG
+from ovos_config.config import Configuration as _Config
+from ovos_config.locations import get_xdg_config_save_path
 
 
 def load_neon_mq_config():
@@ -41,26 +43,25 @@ def load_neon_mq_config():
     """
     valid_config_paths = (
         os.path.expanduser(os.environ.get('NEON_MQ_CONFIG_PATH', "")),
-        os.path.join(os.path.expanduser(os.environ.get("NEON_CONFIG_PATH",
-                                                       "~/.config/neon")),
-                     "mq_config.json"),
+        os.path.join(get_xdg_config_save_path("neon"), "mq_config.json"),
         os.path.expanduser("~/.local/share/neon/credentials.json")
     )
     config = None
     for conf in valid_config_paths:
         if conf and os.path.isfile(conf):
-            config = Configuration().from_file(conf).config_data
+            LOG.warning(f"Legacy configuration found at {conf}")
+            with open(conf) as f:
+                config = json.load(f)
             break
     if not config:
-        return
-    if "MQ" in config.keys():
-        return config["MQ"]
-    else:
-        return config
+        config = _Config()
+    return config.get("MQ", config)
 
 
 class Configuration:
     def __init__(self, file_path: Optional[str] = None):
+        LOG.warning("This class is deprecated. "
+                    "Parse configuration files to dict or use `ovos_config`")
         self._config_data = dict()
         if file_path:
             self.from_file(file_path)
