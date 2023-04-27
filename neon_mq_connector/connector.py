@@ -260,7 +260,7 @@ class MQConnector(ABC):
         Returns MQ Credentials object based on self.config values
         """
         if not self.service_config or self.service_config == dict():
-            raise Exception('Configuration is not set')
+            raise Exception(f'Configuration is not set for {self.service_name}')
         return pika.PlainCredentials(
             self.service_config.get('user', 'guest'),
             self.service_config.get('password', 'guest'))
