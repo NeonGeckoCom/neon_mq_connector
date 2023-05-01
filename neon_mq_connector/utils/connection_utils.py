@@ -121,12 +121,11 @@ def retry(callback_on_exceeded: Union[str, Callable] = None,
                                   f'{callback_on_attempt_failure_args}) - {ex}')
                     sleep_timeout = get_timeout(backoff_factor=backoff_factor,
                                                 number_of_retries=num_attempts)
-                    LOG.error(f'{error_body}: {e}. '
-                              f'Timeout for {sleep_timeout} secs')
+                    LOG.warning(f'{error_body}: {e}.')
+                    LOG.info(f'Timeout for {sleep_timeout} secs')
                     num_attempts += 1
                     time.sleep(sleep_timeout)
-            LOG.error(f'Failed to execute function {error_body} after '
-                      f'{num_retries} attempts')
+            LOG.error(f'Failed to execute after {num_retries} attempts')
             if callback_on_exceeded:
                 if with_self and isinstance(callback_on_exceeded, str):
                     return getattr(self, callback_on_exceeded)(

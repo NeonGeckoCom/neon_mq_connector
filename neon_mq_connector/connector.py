@@ -35,7 +35,7 @@ import pika.exceptions
 import threading
 
 from abc import ABC
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Union
 from pika.exchange_type import ExchangeType
 from ovos_utils.log import LOG
 
@@ -44,12 +44,18 @@ from neon_mq_connector.utils import RepeatingTimer, retry, wait_for_mq_startup
 from neon_mq_connector.utils.network_utils import dict_to_b64
 
 
+def _default_error_handler(*args):
+    LOG.warning("Error handler not defined")
+    raise Exception(*args)
+
+
 class ConsumerThread(threading.Thread):
 
     # retry to handle connection failures in case MQ server is still starting
     @retry(use_self=True)
     def __init__(self, connection_params: pika.ConnectionParameters,
-                 queue: str, callback_func: callable, error_func: callable,
+                 queue: str, callback_func: callable,
+                 error_func: callable = _default_error_handler,
                  auto_ack: bool = True,
                  queue_reset: bool = False,
                  queue_exclusive: bool = False,
@@ -178,6 +184,14 @@ class MQConnector(ABC):
         self._vhost = None
         self._sync_thread = None
         self._observer_thread = None
+
+        # Define properties and initialize them
+        self.sync_period = 0
+        self.observe_period = 0
+        self.vhost_prefix = ""
+        self.default_testing_prefix = 'test'
+        self.testing_envs = set()
+        self.testing_prefix_envs = None
         self.__init_configurable_properties()
 
     @property
@@ -332,7 +346,8 @@ class MQConnector(ABC):
                         request_data: dict,
                         exchange: Optional[str] = '',
                         queue: Optional[str] = '',
-                        exchange_type: Optional[str] = ExchangeType.direct,
+                        exchange_type: Union[str, ExchangeType] =
+                        ExchangeType.direct,
                         expiration: int = 1000) -> str:
         """
         Emits request to the neon api service on the MQ bus
