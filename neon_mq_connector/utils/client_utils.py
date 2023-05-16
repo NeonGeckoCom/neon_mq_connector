@@ -58,6 +58,7 @@ class NeonMQHandler(MQConnector):
         super().__init__(config, service_name)
         self.vhost = vhost
         import pika
+        LOG.debug(f"{service_name} connecting to {vhost} with config: {config}")
         self.connection = pika.BlockingConnection(
             parameters=self.get_connection_params(vhost))
 

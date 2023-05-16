@@ -333,6 +333,7 @@ class MQConnector(ABC):
             port=int(self.config.get('port', '5672')),
             virtual_host=vhost,
             credentials=self.mq_credentials, **kwargs)
+        LOG.debug(connection_params)
         return connection_params
 
     @staticmethod
