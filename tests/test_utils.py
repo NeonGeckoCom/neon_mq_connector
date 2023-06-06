@@ -30,17 +30,56 @@ import os
 import sys
 import time
 import unittest
-import pytest
+import pika
+
+from threading import Thread
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from neon_mq_connector.utils import RepeatingTimer
-from neon_mq_connector.utils.connection_utils import get_timeout, retry, wait_for_mq_startup
+from neon_mq_connector.utils.connection_utils import get_timeout, retry, \
+    wait_for_mq_startup
+from neon_mq_connector.utils.client_utils import MQConnector
+from neon_mq_connector.utils.network_utils import dict_to_b64, b64_to_dict
+ROOT_DIR = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+TEST_PATH = os.path.join(ROOT_DIR, "tests", "ccl_files")
+
+INPUT_CHANNEL = str(time.time())
+OUTPUT_CHANNEL = str(time.time())
+
+TEST_DICT = {b"section 1": {"key1": "val1",
+                            "key2": "val2"},
+             "section 2": {"key_1": b"val1",
+                           "key_2": f"val2"}}
+
+TEST_DICT_B64 = b'IntiJ3NlY3Rpb24gMSc6IHsna2V5MSc6ICd2YWwxJywgJ2tleTInOiAndm' \
+                b'FsMid9LCAnc2VjdGlvbiAyJzogeydrZXlfMSc6IGIndmFsMScsICdrZXlfM' \
+                b'ic6ICd2YWwyJ319Ig=='
 
 
 def callback_on_failure():
     """Simple callback on failure"""
     return False
+
+
+class TestMQConnector(MQConnector):
+    def __init__(self, config: dict, service_name: str, vhost: str):
+        super().__init__(config, service_name)
+        self.vhost = vhost
+
+    @staticmethod
+    def respond(channel, method, _, body):
+        request = b64_to_dict(body)
+        response = dict_to_b64({"message_id": request["message_id"],
+                                "success": True,
+                                "request_data": request["data"]})
+        reply_channel = request.get("routing_key") or OUTPUT_CHANNEL
+        channel.queue_declare(queue=reply_channel)
+        channel.basic_publish(exchange='',
+                              routing_key=reply_channel,
+                              body=response,
+                              properties=pika.BasicProperties(expiration='1000'))
+        channel.basic_ack(delivery_tag=method.delivery_tag)
 
 
 class TestMQConnectorUtils(unittest.TestCase):
@@ -51,7 +90,8 @@ class TestMQConnectorUtils(unittest.TestCase):
         """Simple method incrementing counter by one"""
         self.counter += 1
 
-    @retry(num_retries=3, backoff_factor=0.1, callback_on_exceeded=callback_on_failure, use_self=True)
+    @retry(num_retries=3, backoff_factor=0.1,
+           callback_on_exceeded=callback_on_failure, use_self=True)
     def method_passing_on_nth_attempt(self, num_attempts: int = 3) -> bool:
         """
             Simple method that is passing check only after n-th attempt
@@ -89,7 +129,8 @@ class TestMQConnectorUtils(unittest.TestCase):
     def test_repeating_timer(self):
         """Testing repeating timer thread"""
         interval_timeout = 3
-        timer_thread = RepeatingTimer(interval=0.9, function=self.repeating_method)
+        timer_thread = RepeatingTimer(interval=0.9,
+                                      function=self.repeating_method)
         timer_thread.start()
         time.sleep(interval_timeout)
         timer_thread.cancel()
@@ -97,7 +138,107 @@ class TestMQConnectorUtils(unittest.TestCase):
 
     def test_wait_for_mq_startup(self):
         self.assertTrue(wait_for_mq_startup("api.neon.ai", 5672))
-        self.assertFalse(wait_for_mq_startup("api.neon.ai", 443, 1))
+        self.assertFalse(wait_for_mq_startup("www.neon.ai", 5672, 1))
 
     def setUp(self) -> None:
         self.counter = 0
+
+
+class MqUtilTests(unittest.TestCase):
+    test_connector = None
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        from neon_mq_connector.utils.client_utils import _default_mq_config
+        vhost = "/neon_testing"
+        cls.test_connector = TestMQConnector(config=_default_mq_config,
+                                             service_name="mq_handler",
+                                             vhost=vhost)
+        cls.test_connector.register_consumer("neon_utils_test", vhost,
+                                             INPUT_CHANNEL,
+                                             cls.test_connector.respond,
+                                             auto_ack=False)
+        cls.test_connector.run_consumers()
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        cls.test_connector.stop_consumers()
+
+    def test_send_mq_request_valid(self):
+        from neon_mq_connector.utils.client_utils import send_mq_request
+        request = {"data": time.time()}
+        response = send_mq_request("/neon_testing", request, INPUT_CHANNEL)
+        self.assertIsInstance(response, dict)
+        self.assertTrue(response["success"])
+        self.assertEqual(response["request_data"], request["data"])
+
+    def test_send_mq_request_spec_output_channel_valid(self):
+        from neon_mq_connector.utils.client_utils import send_mq_request
+        request = {"data": time.time()}
+        response = send_mq_request("/neon_testing", request,
+                                   INPUT_CHANNEL, OUTPUT_CHANNEL)
+        self.assertIsInstance(response, dict)
+        self.assertTrue(response["success"])
+        self.assertEqual(response["request_data"], request["data"])
+
+    def test_multiple_mq_requests(self):
+        from neon_mq_connector.utils.client_utils import send_mq_request
+        responses = dict()
+        processes = []
+
+        def check_response(name: str):
+            request = {"data": time.time()}
+            response = send_mq_request("/neon_testing", request, INPUT_CHANNEL)
+            self.assertIsInstance(response, dict)
+            if not isinstance(response, dict):
+                responses[name] = {'success': False,
+                                   'reason': 'Response is not a dict',
+                                   'response': response}
+                return
+            if not response.get("success"):
+                responses[name] = {'success': False,
+                                   'reason': 'Response success flag not true',
+                                   'response': response}
+                return
+            if response.get("request_data") != request["data"]:
+                responses[name] = {'success': False,
+                                   'reason': "Response data doesn't match request",
+                                   'response': response}
+                return
+            responses[name] = {'success': True}
+
+        for i in range(8):
+            p = Thread(target=check_response, args=(str(i),))
+            p.start()
+            processes.append(p)
+
+        for p in processes:
+            p.join(60)
+
+        self.assertEqual(len(processes), len(responses))
+        for resp in responses.values():
+            self.assertTrue(resp['success'], resp.get('reason'))
+
+    def test_send_mq_request_invalid_vhost(self):
+        from neon_mq_connector.utils.client_utils import send_mq_request
+        with self.assertRaises(ValueError):
+            send_mq_request("invalid_endpoint", {}, "test", "test", timeout=5)
+
+
+class TestNetworkUtils(unittest.TestCase):
+    def test_dict_to_b64(self):
+        b64_str = dict_to_b64(TEST_DICT)
+        self.assertIsInstance(b64_str, bytes)
+        self.assertTrue(len(b64_str) > 0)
+        self.assertEqual(b64_str, TEST_DICT_B64)
+
+    def test_b64_to_dict(self):
+        result_dict = b64_to_dict(TEST_DICT_B64)
+        self.assertIsInstance(result_dict, dict)
+        self.assertTrue(len(list(result_dict)) > 0)
+        self.assertEqual(result_dict, TEST_DICT)
+
+    def test_check_port_is_open(self):
+        from neon_mq_connector.utils.network_utils import check_port_is_open
+        self.assertTrue(check_port_is_open("api.neon.ai", 5672))
+        self.assertFalse(check_port_is_open("www.neon.ai", 5672))

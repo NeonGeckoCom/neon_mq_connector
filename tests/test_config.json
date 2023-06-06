@@ -1,0 +1,10 @@
+{
+  "server": "mq.2021.us",
+  "port": 25672,
+  "users": {
+    "test": {
+      "user": "neon_api_utils",
+      "password": "Klatchat2021"
+    }
+  }
+}

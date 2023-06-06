@@ -30,10 +30,11 @@ import sys
 import threading
 import time
 import unittest
+import pika
 import pytest
 
 from mock.mock import Mock
-from neon_utils import LOG
+from ovos_utils.log import LOG
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from neon_mq_connector.config import Configuration
@@ -43,6 +44,21 @@ from neon_mq_connector.utils.rabbit_utils import create_mq_callback
 
 
 class MQConnectorChild(MQConnector):
+    def __init__(self, config: dict, service_name: str):
+        super().__init__(config=config, service_name=service_name)
+        self.func_1_ok = False
+        self.func_2_ok = False
+        self.func_3_ok = False
+        self.func_3_knocks = 0
+        self.callback_ok = False
+        self.exception = None
+        self._consume_event = None
+        self._consumer_restarted_event = None
+        self.observe_period = 10
+        self.register_consumer(name="error", vhost=self.vhost, queue="error",
+                               callback=self.callback_func_error,
+                               on_error=self.handle_error, auto_ack=False,
+                               restart_attempts=0)
 
     @create_mq_callback(include_callback_props=('channel', 'method',))
     def callback_func_1(self, channel, method):
@@ -97,27 +113,14 @@ class MQConnectorChild(MQConnector):
         if name == 'test3':
             self.consumer_restarted_event.set()
 
-    def __init__(self, config: dict, service_name: str):
-        super().__init__(config=config, service_name=service_name)
-        self.func_1_ok = False
-        self.func_2_ok = False
-        self.func_3_ok = False
-        self.func_3_knocks = 0
-        self.callback_ok = False
-        self.exception = None
-        self._consume_event = None
-        self._consumer_restarted_event = None
-        self.observe_period = 10
-        self.register_consumer(name="error", vhost=self.vhost, queue="error", callback=self.callback_func_error,
-                               on_error=self.handle_error, auto_ack=False, restart_attempts=0)
-
 
 class MQConnectorChildTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        file_path = os.environ.get('CONNECTOR_CONFIG', "~/.local/share/neon/credentials.json")
-        cls.connector_instance = MQConnectorChild(config=Configuration(file_path=file_path).config_data,
-                                                  service_name='test')
+        file_path = os.path.join(os.path.dirname(__file__), "test_config.json")
+        cls.connector_instance = MQConnectorChild(
+            config=Configuration(file_path=file_path).config_data,
+            service_name='test')
         cls.connector_instance.run(run_sync=False)
 
     @classmethod
@@ -236,3 +239,45 @@ class MQConnectorChildTest(unittest.TestCase):
                                              expiration=4000)
         self.connector_instance.consume_event.wait(10)
         self.assertTrue(self.connector_instance.func_3_ok)
+
+
+class TestMQConnectorInit(unittest.TestCase):
+    def test_connector_init(self):
+        connector = MQConnector(None, "test")
+        self.assertEqual(connector.service_name, "test")
+        self.assertEqual(connector.consumers, dict())
+        self.assertEqual(connector.consumer_properties, dict())
+
+        # Test properties
+        self.assertIsInstance(connector.config, dict)
+        test_config = {"test": {"username": "test",
+                                "password": "test"}}
+        connector.config = test_config
+        self.assertEqual(connector.config, test_config)
+        connector.config = {"MQ": test_config}
+        self.assertEqual(connector.config, test_config)
+
+        self.assertIsInstance(connector.service_configurable_properties, dict)
+        self.assertIsInstance(connector.service_id, str)
+
+        # Test credentials
+        with self.assertRaises(Exception):
+            connector.mq_credentials
+        connector.config = {"MQ": {"users": {"test": {"user": "username",
+                                                      "password": "test"}}}}
+        creds = connector.mq_credentials
+        self.assertIsInstance(creds, pika.PlainCredentials)
+        self.assertEqual(creds.username, "username")
+        self.assertEqual(creds.password, "test")
+
+        # Testing test vars
+        self.assertIsInstance(connector.testing_mode, bool)
+        self.assertIsInstance(connector.testing_prefix, str)
+
+        # self.assertEqual(connector.vhost, '/')
+        test_vhost = "/testing"
+        connector.vhost = "testing"
+        self.assertEqual(connector.vhost, test_vhost)
+        connector.vhost = "/testing"
+        self.assertEqual(connector.vhost, test_vhost)
+    # TODO: test other methods

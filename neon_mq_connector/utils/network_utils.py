@@ -26,46 +26,46 @@
 # NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 # SOFTWARE,  EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-from functools import wraps
-from ovos_utils.log import LOG
+import json
+import base64
+import socket
 
-from neon_mq_connector.utils.network_utils import b64_to_dict
+"""
+These utils are duplicated from neon_utils.socket_utils to avoid a circular
+dependency.
+"""
 
 
-def create_mq_callback(include_callback_props: tuple = ('body',)):
-    """ Creates MQ callback method by filtering relevant MQ attributes """
+def b64_to_dict(data: bytes, charset: str = "utf-8") -> dict:
+    """
+        Decodes base64-encoded message to python dictionary
+        @param data: string bytes to decode
+        @param charset: character set encoding to use (https://docs.python.org/3/library/codecs.html#standard-encodings)
 
-    if not include_callback_props:
-        include_callback_props = ()
+        @return decoded dictionary
+    """
+    return eval(json.loads(base64.b64decode(data).decode(charset)))
 
-    def wrapper(f):
 
-        @wraps(f)
-        def wrapped(self, *f_args):
-            mq_props = ['channel', 'method', 'properties', 'body']
+def dict_to_b64(data: dict, charset: str = "utf-8") -> bytes:
+    """
+        Encodes python dictionary into base64 message
+        @param data: python dictionary to encode
+        @param charset: character set encoding to use (https://docs.python.org/3/library/codecs.html#standard-encodings)
 
-            callback_kwargs = {}
+        @return base64 encoded string
+    """
+    return base64.b64encode(json.dumps(str(data)).encode(charset))
 
-            for idx in range(len(mq_props)):
-                if mq_props[idx] in include_callback_props:
-                    value = f_args[idx]
-                    if idx == 3:
-                        if value and isinstance(value, bytes):
-                            dict_data = b64_to_dict(value)
-                            callback_kwargs['body'] = dict_data
-                        else:
-                            raise TypeError(f'Invalid body received, expected: '
-                                            f'bytes string; got: {type(value)}')
-                    else:
-                        callback_kwargs[mq_props[idx]] = value
-            try:
-                res = f(self, **callback_kwargs)
-            except Exception as ex:
-                LOG.error(f'Execution of {f.__name__} failed due to '
-                          f'exception={ex}')
-                res = None
-            return res
 
-        return wrapped
-
-    return wrapper
+def check_port_is_open(addr: str, port: int) -> bool:
+    """
+    Checks if the specified port at addr is open
+    :param addr: IP or URL to query
+    :param port: port to check
+    :returns: True if the port is reachable, else False
+    """
+    test_connection = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    test_connection.settimeout(5)
+    status = test_connection.connect_ex((addr, port))
+    return status == 0

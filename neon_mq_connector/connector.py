@@ -34,14 +34,19 @@ import pika
 import pika.exceptions
 import threading
 
-from abc import ABC, abstractmethod
-from typing import Optional, Dict, Any
+from abc import ABC
+from typing import Optional, Dict, Any, Union
 from pika.exchange_type import ExchangeType
-from neon_utils.logger import LOG
-from neon_utils.socket_utils import dict_to_b64
+from ovos_utils.log import LOG
 
-from .config import load_neon_mq_config
-from .utils import RepeatingTimer, retry, wait_for_mq_startup
+from neon_mq_connector.config import load_neon_mq_config
+from neon_mq_connector.utils import RepeatingTimer, retry, wait_for_mq_startup
+from neon_mq_connector.utils.network_utils import dict_to_b64
+
+
+def _default_error_handler(*args):
+    LOG.warning("Error handler not defined")
+    raise Exception(*args)
 
 
 class ConsumerThread(threading.Thread):
@@ -49,7 +54,8 @@ class ConsumerThread(threading.Thread):
     # retry to handle connection failures in case MQ server is still starting
     @retry(use_self=True)
     def __init__(self, connection_params: pika.ConnectionParameters,
-                 queue: str, callback_func: callable, error_func: callable,
+                 queue: str, callback_func: callable,
+                 error_func: callable = _default_error_handler,
                  auto_ack: bool = True,
                  queue_reset: bool = False,
                  queue_exclusive: bool = False,
@@ -129,16 +135,18 @@ class ConsumerThread(threading.Thread):
 
 
 class MQConnector(ABC):
-    """ Abstract class implementing interface for attaching services to MQ server """
+    """
+    Abstract class implementing interface for attaching services to MQ server
+    """
 
     __run_retries__ = 5
-    __max_consumer_restarts__ = 5
+    __max_consumer_restarts__ = -1
     __consumer_join_timeout__ = 10
 
     @staticmethod
-    def init_config(config: dict) -> dict:
+    def init_config(config: Optional[dict] = None) -> dict:
         """ Initialize config from source data """
-        config = config or load_neon_mq_config()
+        config = config or load_neon_mq_config() or dict()
         config = config.get('MQ') or config
         return config
 
@@ -155,7 +163,7 @@ class MQConnector(ABC):
                         "password": "<password of the service on mq server>"
                     }
                 },
-                "server": "<MQ Server IP>",
+                "server": "<MQ Server hostname or IP>",
                 "port": <MQ Server Port (default=5672)>,
                 "<self.property_key (default='properties')>": {
                     <key of the configurable property>:<value of the configurable property>
@@ -164,8 +172,9 @@ class MQConnector(ABC):
 
             :param service_name: name of current service
        """
-        self.config = config
-        # Override self.property_key BEFORE base __init__ to initialise properties under customized config location
+        self._config = config
+        # Override self.property_key BEFORE base __init__ to initialise
+        # properties under customized config location
         if not hasattr(self, 'property_key'):
             self.property_key = 'properties'
         self._service_id = None
@@ -175,10 +184,20 @@ class MQConnector(ABC):
         self._vhost = None
         self._sync_thread = None
         self._observer_thread = None
+
+        # Define properties and initialize them
+        self.sync_period = 0
+        self.observe_period = 0
+        self.vhost_prefix = ""
+        self.default_testing_prefix = 'test'
+        self.testing_envs = set()
+        self.testing_prefix_envs = None
         self.__init_configurable_properties()
 
     @property
     def config(self):
+        if not self._config:
+            self._config = self.init_config()
         return self._config
 
     @config.setter
@@ -188,51 +207,63 @@ class MQConnector(ABC):
     @property
     def service_config(self) -> dict:
         """ Returns current service config """
-        return self.config['users'][self.service_name]
+        return self.config.get('users', {}).get(self.service_name) or dict()
 
     @property
     def __basic_configurable_properties(self) -> Dict[str, Any]:
         """
-            Mapping of basic configurable properties to their default values.
-            WARNING: This method should be left untouched to prevent unexpected behaviour;
-            To override values of the basic properties specify it in self.service_configurable_properties()
+        Mapping of basic configurable properties to their default values.
+        WARNING: This method should be left untouched to prevent unexpected
+        behaviour. To override values of the basic properties specify it in
+        self.service_configurable_properties()
         """
         return {
                 'sync_period': 10,  # in seconds
                 'observe_period': 20,  # in seconds
                 'vhost_prefix': '',  # Could be used for scalability purposes
                 'default_testing_prefix': 'test',
-                'testing_envs': (f'{self.service_name.upper()}_TESTING', 'MQ_TESTING',),  # order matters
-                'testing_prefix_envs': (f'{self.service_name.upper()}_TESTING_PREFIX', 'MQ_TESTING_PREFIX',)  # order matters
+                'testing_envs': (f'{self.service_name.upper()}_TESTING',
+                                 'MQ_TESTING',),  # order matters
+                'testing_prefix_envs': (f'{self.service_name.upper()}'
+                                        f'_TESTING_PREFIX',
+                                        'MQ_TESTING_PREFIX',)  # order matters
                 }
 
     @property
     def service_configurable_properties(self) -> Dict[str, Any]:
         """
-            Mapping of service-related configurable properties to their default values.
-
-            Override to provide service-specific configurable properties AND to update the default values of basic properties
+        Mapping of service-related configurable properties to default values.
+        Override to provide service-specific configurable properties AND to
+        update the default values of basic properties
         """
         return {}
 
     @property
     def __configurable_properties(self):
         """
-            Joins basic configurable properties with appended once
-            WARNING: This method should NOT be modified by children to prevent unexpected behaviour
+        Joins basic configurable properties with appended once
+        WARNING: This method should NOT be modified by children to prevent
+        unexpected behaviour
         """
-        return {**self.__basic_configurable_properties, **self.service_configurable_properties}
+        return {**self.__basic_configurable_properties,
+                **self.service_configurable_properties}
 
     def __init_configurable_properties(self):
-        """ Initialize properties based on the config and configurable properties
-            WARNING: This method should NOT be modified by children to prevent unexpected behaviour
+        """
+        Initialize properties based on the config and configurable properties
+        WARNING: This method should NOT be modified by children to prevent
+        unexpected behaviour
         """
         for _property, default_value in self.__configurable_properties.items():
-            setattr(self, _property, self.service_config.get(self.property_key, {}).get(_property, default_value))
+            setattr(self, _property,
+                    self.service_config.get(self.property_key,
+                                            {}).get(_property, default_value))
 
     @property
     def service_id(self):
-        """ID of the service should be considered to be unique"""
+        """
+        ID of the service should be considered to be unique
+        """
         if not self._service_id:
             self._service_id = self.create_unique_id()
         return self._service_id
@@ -242,21 +273,25 @@ class MQConnector(ABC):
         """
         Returns MQ Credentials object based on self.config values
         """
-        if not self.service_config:
-            raise Exception('Configuration is not set')
+        if not self.service_config or self.service_config == dict():
+            raise Exception(f'Configuration is not set for {self.service_name}')
         return pika.PlainCredentials(
             self.service_config.get('user', 'guest'),
             self.service_config.get('password', 'guest'))
 
     @property
     def testing_mode(self) -> bool:
-        """Indicates if given instance is instantiated in testing mode"""
+        """
+        Indicates if given instance is instantiated in testing mode
+        """
         return any(os.environ.get(env_var, '0') == '1'
                    for env_var in self.testing_envs)
 
     @property
     def testing_prefix(self) -> str:
-        """Returns testing mode prefix for the item"""
+        """
+        Returns testing mode prefix for the item
+        """
         for env_var in self.testing_prefix_envs:
             prefix = os.environ.get(env_var)
             if prefix:
@@ -267,9 +302,11 @@ class MQConnector(ABC):
     def vhost(self):
         if not self._vhost:
             self._vhost = '/'
-        if self.vhost_prefix and self.vhost_prefix not in self._vhost.split('_')[0]:
+        if self.vhost_prefix and self.vhost_prefix not in \
+                self._vhost.split('_')[0]:
             self._vhost = f'/{self.vhost_prefix}_{self._vhost[1:]}'
-        if self.testing_mode and self.testing_prefix not in self._vhost.split('_')[0]:
+        if self.testing_mode and self.testing_prefix not in \
+                self._vhost.split('_')[0]:
             self._vhost = f'/{self.testing_prefix}_{self._vhost[1:]}'
         if self._vhost.endswith('_'):
             self._vhost = self._vhost[:-1]
@@ -309,7 +346,8 @@ class MQConnector(ABC):
                         request_data: dict,
                         exchange: Optional[str] = '',
                         queue: Optional[str] = '',
-                        exchange_type: Optional[str] = ExchangeType.direct,
+                        exchange_type: Union[str, ExchangeType] =
+                        ExchangeType.direct,
                         expiration: int = 1000) -> str:
         """
         Emits request to the neon api service on the MQ bus
@@ -366,8 +404,10 @@ class MQConnector(ABC):
         :raises ValueError: invalid request data provided
         :returns message_id: id of the sent message
         """
-        return cls.emit_mq_message(connection=connection, request_data=request_data, exchange=exchange,
-                                   queue='', exchange_type='fanout', expiration=expiration)
+        return cls.emit_mq_message(connection=connection,
+                                   request_data=request_data, exchange=exchange,
+                                   queue='', exchange_type='fanout',
+                                   expiration=expiration)
 
     def send_message(self,
                      request_data: dict,
@@ -378,25 +418,30 @@ class MQConnector(ABC):
                      exchange_type: ExchangeType = ExchangeType.direct,
                      expiration: int = 1000) -> str:
         """
-            Wrapper method for creation the MQ connection and immediate propagation of requested message with that
+        Wrapper method for creation the MQ connection and immediate propagation
+        of requested message with that
 
-            :param request_data: dictionary containing requesting data
-            :param vhost: MQ Virtual Host (if not specified - uses its object native)
-            :param exchange: MQ Exchange name (optional)
-            :param queue: MQ Queue name (optional for ExchangeType.fanout)
-            :param connection_props: supportive connection properties while connection creation (optional)
-            :param exchange_type: type of exchange to use (defaults to ExchangeType.direct)
-            :param expiration: posted data expiration (in millis)
+        :param request_data: dictionary containing requesting data
+        :param vhost: MQ Virtual Host (if not specified, uses its object native)
+        :param exchange: MQ Exchange name (optional)
+        :param queue: MQ Queue name (optional for ExchangeType.fanout)
+        :param connection_props: supportive connection properties while
+            connection creation (optional)
+        :param exchange_type: type of exchange to use
+            (defaults to ExchangeType.direct)
+        :param expiration: posted data expiration (in millis)
 
-            :returns message_id: id of the propagated message
+        :returns message_id: id of the propagated message
         """
         if not vhost:
             vhost = self.vhost
         if not connection_props:
             connection_props = {}
         LOG.debug(f'Opening connection on vhost={vhost}')
-        with self.create_mq_connection(vhost=vhost, **connection_props) as mq_conn:
-            if exchange_type in (ExchangeType.fanout, ExchangeType.fanout.value,):
+        with self.create_mq_connection(vhost=vhost,
+                                       **connection_props) as mq_conn:
+            if exchange_type in (ExchangeType.fanout,
+                                 ExchangeType.fanout.value,):
                 LOG.debug('Sending fanout request to MQ')
                 msg_id = self.publish_message(connection=mq_conn,
                                               request_data=request_data,
@@ -424,13 +469,17 @@ class MQConnector(ABC):
         """
         if not self.config:
             raise Exception('Configuration is not set')
-        return pika.BlockingConnection(parameters=self.get_connection_params(vhost, **kwargs))
+        return pika.BlockingConnection(
+            parameters=self.get_connection_params(vhost, **kwargs))
 
     def register_consumer(self, name: str, vhost: str, queue: str,
-                          callback: callable, on_error: Optional[callable] = None,
+                          callback: callable,
+                          on_error: Optional[callable] = None,
                           auto_ack: bool = True, queue_reset: bool = False,
-                          exchange: str = None, exchange_type: str = None, exchange_reset: bool = False,
-                          queue_exclusive: bool = False, skip_on_existing: bool = False,
+                          exchange: str = None, exchange_type: str = None,
+                          exchange_reset: bool = False,
+                          queue_exclusive: bool = False,
+                          skip_on_existing: bool = False,
                           restart_attempts: int = __max_consumer_restarts__):
         """
         Registers a consumer for the specified queue.
@@ -450,7 +499,8 @@ class MQConnector(ABC):
         :param auto_ack: Boolean to enable ack of messages upon receipt
         :param queue_exclusive: if Queue needs to be exclusive
         :param skip_on_existing: to skip if consumer already exists
-        :param restart_attempts: max instance restart attempts (if < 0 - will restart infinitely times)
+        :param restart_attempts: max instance restart attempts
+            (if < 0 - will restart infinitely times)
         """
         error_handler = on_error or self.default_error_handler
         consumer = self.consumers.get(name, None)
@@ -461,20 +511,23 @@ class MQConnector(ABC):
                 return
             self.stop_consumers(names=(name,))
         self.consumer_properties.setdefault(name, {})
-        self.consumer_properties[name]['properties'] = dict(connection_params=self.get_connection_params(vhost),
-                                                            queue=queue,
-                                                            queue_reset=queue_reset, callback_func=callback,
-                                                            exchange=exchange, exchange_reset=exchange_reset,
-                                                            exchange_type=exchange_type, error_func=error_handler,
-                                                            auto_ack=auto_ack, name=name, queue_exclusive=queue_exclusive,)
-        self.consumer_properties[name]['restart_attempts'] = int(restart_attempts)
+        self.consumer_properties[name]['properties'] = \
+            dict(connection_params=self.get_connection_params(vhost),
+                 queue=queue, queue_reset=queue_reset, callback_func=callback,
+                 exchange=exchange, exchange_reset=exchange_reset,
+                 exchange_type=exchange_type, error_func=error_handler,
+                 auto_ack=auto_ack, name=name, queue_exclusive=queue_exclusive,)
+        self.consumer_properties[name]['restart_attempts'] = \
+            int(restart_attempts)
         self.consumer_properties[name]['started'] = False
-        self.consumers[name] = ConsumerThread(**self.consumer_properties[name]['properties'])
+        self.consumers[name] = \
+            ConsumerThread(**self.consumer_properties[name]['properties'])
 
     def restart_consumer(self, name: str):
         self.stop_consumers(names=(name,))
         consumer_data = self.consumer_properties.get(name, {})
-        restart_attempts = consumer_data.get('restart_attempts', self.__max_consumer_restarts__)
+        restart_attempts = consumer_data.get('restart_attempts',
+                                             self.__max_consumer_restarts__)
         if not consumer_data.get('properties'):
             err_msg = 'creation properties not found'
         elif 0 < restart_attempts < consumer_data.get('num_restarted', 0):
@@ -496,20 +549,21 @@ class MQConnector(ABC):
                             skip_on_existing: bool = False,
                             restart_attempts: int = __max_consumer_restarts__):
         """
-            Registers fanout exchange subscriber, wraps register_consumer()
-            Any raised exceptions will be passed as arguments to on_error.
-            :param name: Human readable name of the consumer
-            :param vhost: vhost to register on
-            :param exchange: MQ Exchange to bind to
-            :param exchange_reset: to delete exchange if exists
-                (defaults to False)
-            :param callback: Method to passed queued messages to
-            :param on_error: Optional method to handle any exceptions raised
-                in message handling
-            :param auto_ack: Boolean to enable ack of messages upon receipt
-            :param skip_on_existing: to skip if consumer already exists
-                (defaults to False)
-            :param restart_attempts: max instance restart attempts (if < 0 - will restart infinitely times)
+        Registers fanout exchange subscriber, wraps register_consumer()
+        Any raised exceptions will be passed as arguments to on_error.
+        :param name: Human readable name of the consumer
+        :param vhost: vhost to register on
+        :param exchange: MQ Exchange to bind to
+        :param exchange_reset: to delete exchange if exists
+            (defaults to False)
+        :param callback: Method to passed queued messages to
+        :param on_error: Optional method to handle any exceptions raised
+            in message handling
+        :param auto_ack: Boolean to enable ack of messages upon receipt
+        :param skip_on_existing: to skip if consumer already exists
+            (defaults to False)
+        :param restart_attempts: max instance restart attempts
+            (if < 0 - will restart infinitely times)
         """
         # for fanout exchange queue does not matter unless its non-conflicting
         # and is binded
@@ -541,7 +595,8 @@ class MQConnector(ABC):
         if not names or len(names) == 0:
             names = list(self.consumers)
         for name in names:
-            if isinstance(self.consumers.get(name), ConsumerThread) and not self.consumers[name].is_alive():
+            if isinstance(self.consumers.get(name), ConsumerThread) and not \
+                    self.consumers[name].is_alive():
                 self.consumers[name].daemon = daemon
                 self.consumers[name].start()
                 self.consumer_properties[name]['started'] = True
@@ -556,9 +611,11 @@ class MQConnector(ABC):
         for name in names:
             try:
                 if name in list(self.consumers):
-                    self.consumers[name].join(timeout=self.__consumer_join_timeout__)
+                    self.consumers[name].join(
+                        timeout=self.__consumer_join_timeout__)
                     if self.consumers[name] and self.consumers[name].is_alive():
-                        err_msg = f'{name} is alive although was set to join for {self.__consumer_join_timeout__}!'
+                        err_msg = f'{name} is alive although was set to join ' \
+                                  f'for {self.__consumer_join_timeout__}!'
                         LOG.error(err_msg)
                         raise Exception(err_msg)
                     self.consumers[name] = None
@@ -566,17 +623,18 @@ class MQConnector(ABC):
             except Exception as e:
                 raise ChildProcessError(e)
 
-    @retry(callback_on_exceeded='stop_sync_thread', use_self=True, num_retries=__run_retries__)
+    @retry(callback_on_exceeded='stop_sync_thread', use_self=True,
+           num_retries=__run_retries__)
     def sync(self, vhost: str = None, exchange: str = None, queue: str = None,
              request_data: dict = None):
         """
-            Periodical notification message to be sent into MQ,
-            used to notify other network listeners about this service health status
+        Periodic notification message to be sent into MQ,
+        used to notify other network listeners about this service health status
 
-            :param vhost: mq virtual host (defaults to self.vhost)
-            :param exchange: mq exchange (defaults to base one)
-            :param queue: message queue prefix (defaults to self.service_name)
-            :param request_data: data to publish in sync
+        :param vhost: mq virtual host (defaults to self.vhost)
+        :param exchange: mq exchange (defaults to base one)
+        :param queue: message queue prefix (defaults to self.service_name)
+        :param request_data: data to publish in sync
         """
         vhost = vhost or self.vhost
         queue = f'{queue or self.service_name}_sync'
@@ -590,14 +648,17 @@ class MQConnector(ABC):
             self.publish_message(mq_connection, exchange=exchange,
                                  request_data=request_data)
 
-    @retry(callback_on_exceeded='stop', use_self=True, num_retries=__run_retries__)
-    def run(self, run_consumers: bool = True, run_sync: bool = True, run_observer: bool = True, **kwargs):
+    @retry(callback_on_exceeded='stop', use_self=True,
+           num_retries=__run_retries__)
+    def run(self, run_consumers: bool = True, run_sync: bool = True,
+            run_observer: bool = True, **kwargs):
         """
-            Generic method called on running the instance
+        Generic method called on running the instance
 
-            :param run_consumers: to run this instance consumers (defaults to True)
-            :param run_sync: to run synchronization thread (defaults to True)
-            :param run_observer: to run consumers state observation (defaults to True)
+        :param run_consumers: to run this instance consumers (defaults to True)
+        :param run_sync: to run synchronization thread (defaults to True)
+        :param run_observer: to run consumers state observation
+            (defaults to True)
         """
         host = self.config.get('server', 'localhost')
         port = int(self.config.get('port', '5672'))
@@ -617,7 +678,8 @@ class MQConnector(ABC):
     @property
     def sync_thread(self):
         """Creates new synchronization thread if none is present"""
-        if not (isinstance(self._sync_thread, RepeatingTimer) and self._sync_thread.is_alive()):
+        if not (isinstance(self._sync_thread, RepeatingTimer) and
+                self._sync_thread.is_alive()):
             self._sync_thread = RepeatingTimer(self.sync_period, self.sync)
             self._sync_thread.daemon = True
         return self._sync_thread
@@ -629,7 +691,10 @@ class MQConnector(ABC):
             self._sync_thread = None
 
     def observe_consumers(self):
-        """ Iteratively observes each consumer, and if it was launched but is not alive - restarts it """
+        """
+        Iteratively observes each consumer, and if it was launched but is not
+        alive - restarts it
+        """
         LOG.debug('Observers state observation')
         consumers_dict = copy.copy(self.consumers)
         for consumer_name, consumer_instance in consumers_dict.items():
@@ -643,8 +708,10 @@ class MQConnector(ABC):
     @property
     def observer_thread(self):
         """Creates new observer thread if none is present"""
-        if not (isinstance(self._observer_thread, RepeatingTimer) and self._observer_thread.is_alive()):
-            self._observer_thread = RepeatingTimer(self.observe_period, self.observe_consumers)
+        if not (isinstance(self._observer_thread, RepeatingTimer) and
+                self._observer_thread.is_alive()):
+            self._observer_thread = RepeatingTimer(self.observe_period,
+                                                   self.observe_consumers)
             self._observer_thread.daemon = True
         return self._observer_thread
 
