@@ -435,18 +435,19 @@ class MQConnector(ABC):
             vhost = self.vhost
         if not connection_props:
             connection_props = {}
-        LOG.debug(f'Opening connection on vhost={vhost}')
+        LOG.debug(f'Opening connection on vhost={vhost} queue={queue}')
         with self.create_mq_connection(vhost=vhost,
                                        **connection_props) as mq_conn:
             if exchange_type in (ExchangeType.fanout,
                                  ExchangeType.fanout.value,):
-                LOG.debug('Sending fanout request to MQ')
+                LOG.debug(f'Sending fanout request to exchange: {exchange}')
                 msg_id = self.publish_message(connection=mq_conn,
                                               request_data=request_data,
                                               exchange=exchange,
                                               expiration=expiration)
             else:
-                LOG.debug(f'Sending {exchange_type} request to MQ')
+                LOG.debug(f'Sending {exchange_type} request to exchange '
+                          f'{exchange}')
                 msg_id = self.emit_mq_message(mq_conn,
                                               queue=queue,
                                               request_data=request_data,
@@ -693,7 +694,7 @@ class MQConnector(ABC):
         Iteratively observes each consumer, and if it was launched but is not
         alive - restarts it
         """
-        LOG.debug('Observers state observation')
+        # LOG.debug('Observers state observation')
         consumers_dict = copy.copy(self.consumers)
         for consumer_name, consumer_instance in consumers_dict.items():
             if self.consumer_properties[consumer_name]['started'] and \
