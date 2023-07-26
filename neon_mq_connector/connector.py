@@ -363,27 +363,31 @@ class MQConnector(ABC):
         :raises ValueError: invalid request data provided
         :returns message_id: id of the sent message
         """
-        if request_data and len(request_data) > 0 and isinstance(request_data, dict):
-            message_id = request_data.setdefault('message_id', cls.create_unique_id())
-            with connection.channel() as channel:
-                if exchange:
-                    channel.exchange_declare(exchange=exchange,
-                                             exchange_type=exchange_type,
-                                             auto_delete=False)
-                if queue:
-                    declared_queue = channel.queue_declare(queue=queue,
-                                                           auto_delete=False)
-                    if exchange_type == ExchangeType.fanout.value:
-                        channel.queue_bind(queue=declared_queue.method.queue,
-                                           exchange=exchange)
-                channel.basic_publish(exchange=exchange or '',
-                                      routing_key=queue,
-                                      body=dict_to_b64(request_data),
-                                      properties=pika.BasicProperties(
-                                          expiration=str(expiration)))
-            return message_id
-        else:
-            raise ValueError(f'Invalid request data provided: {request_data}')
+        if not isinstance(request_data, dict):
+            raise TypeError(f"Expected dict and got {type(request_data)}")
+        if not request_data:
+            raise ValueError(f'No request data provided')
+
+        message_id = request_data.setdefault('message_id', cls.create_unique_id())
+
+        with connection.channel() as channel:
+            if exchange:
+                channel.exchange_declare(exchange=exchange,
+                                         exchange_type=exchange_type,
+                                         auto_delete=False)
+            if queue:
+                declared_queue = channel.queue_declare(queue=queue,
+                                                       auto_delete=False)
+                if exchange_type == ExchangeType.fanout.value:
+                    channel.queue_bind(queue=declared_queue.method.queue,
+                                       exchange=exchange)
+            channel.basic_publish(exchange=exchange or '',
+                                  routing_key=queue,
+                                  body=dict_to_b64(request_data),
+                                  properties=pika.BasicProperties(
+                                      expiration=str(expiration)))
+        LOG.debug(f"sent message: {request_data['message_id']}")
+        return request_data['message_id']
 
     @classmethod
     def publish_message(cls,
