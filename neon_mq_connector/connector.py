@@ -363,10 +363,8 @@ class MQConnector(ABC):
         :raises ValueError: invalid request data provided
         :returns message_id: id of the sent message
         """
-        if request_data and len(request_data) > 0 and isinstance(request_data,
-                                                                 dict):
-            message_id = cls.create_unique_id()
-            request_data['message_id'] = message_id
+        if request_data and len(request_data) > 0 and isinstance(request_data, dict):
+            message_id = request_data.setdefault('message_id', cls.create_unique_id())
             with connection.channel() as channel:
                 if exchange:
                     channel.exchange_declare(exchange=exchange,
