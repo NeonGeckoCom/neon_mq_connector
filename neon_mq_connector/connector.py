@@ -364,7 +364,7 @@ class MQConnector(ABC):
         :returns message_id: id of the sent message
         """
         if request_data and len(request_data) > 0 and isinstance(request_data, dict):
-            request_data.setdefault('message_id', cls.create_unique_id())
+            message_id = request_data.setdefault('message_id', cls.create_unique_id())
             with connection.channel() as channel:
                 if exchange:
                     channel.exchange_declare(exchange=exchange,
