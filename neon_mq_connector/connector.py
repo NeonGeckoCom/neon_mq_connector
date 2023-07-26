@@ -218,16 +218,16 @@ class MQConnector(ABC):
         self.service_configurable_properties()
         """
         return {
-                'sync_period': 10,  # in seconds
-                'observe_period': 20,  # in seconds
-                'vhost_prefix': '',  # Could be used for scalability purposes
-                'default_testing_prefix': 'test',
-                'testing_envs': (f'{self.service_name.upper()}_TESTING',
-                                 'MQ_TESTING',),  # order matters
-                'testing_prefix_envs': (f'{self.service_name.upper()}'
-                                        f'_TESTING_PREFIX',
-                                        'MQ_TESTING_PREFIX',)  # order matters
-                }
+            'sync_period': 10,  # in seconds
+            'observe_period': 20,  # in seconds
+            'vhost_prefix': '',  # Could be used for scalability purposes
+            'default_testing_prefix': 'test',
+            'testing_envs': (f'{self.service_name.upper()}_TESTING',
+                             'MQ_TESTING',),  # order matters
+            'testing_prefix_envs': (f'{self.service_name.upper()}'
+                                    f'_TESTING_PREFIX',
+                                    'MQ_TESTING_PREFIX',)  # order matters
+        }
 
     @property
     def service_configurable_properties(self) -> Dict[str, Any]:
@@ -453,13 +453,12 @@ class MQConnector(ABC):
             else:
                 LOG.debug(f'Sending {exchange_type} request to exchange '
                           f'{exchange}')
-                msg_id = self.emit_mq_message(
-                    mq_conn,
-                    queue=queue,
-                    request_data=request_data,
-                    exchange=exchange,
-                    exchange_type=exchange_type,
-                    expiration=expiration)
+                msg_id = self.emit_mq_message(mq_conn,
+                                              queue=queue,
+                                              request_data=request_data,
+                                              exchange=exchange,
+                                              exchange_type=exchange_type,
+                                              expiration=expiration)
         LOG.info(f'Message propagated, id={msg_id}')
         return msg_id
 
