@@ -433,7 +433,6 @@ class MQConnector(ABC):
         :param exchange_type: type of exchange to use
             (defaults to ExchangeType.direct)
         :param expiration: posted data expiration (in millis)
-        :param override_message_id: if True, generate a unique `message_id`
 
         :returns message_id: id of the propagated message
         """
@@ -460,8 +459,7 @@ class MQConnector(ABC):
                     request_data=request_data,
                     exchange=exchange,
                     exchange_type=exchange_type,
-                    expiration=expiration,
-                    override_message_id=override_message_id)
+                    expiration=expiration)
         LOG.info(f'Message propagated, id={msg_id}')
         return msg_id
 
