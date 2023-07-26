@@ -418,8 +418,7 @@ class MQConnector(ABC):
                      exchange: Optional[str] = '',
                      queue: Optional[str] = '',
                      exchange_type: ExchangeType = ExchangeType.direct,
-                     expiration: int = 1000,
-                     override_message_id: bool = True) -> str:
+                     expiration: int = 1000) -> str:
         """
         Wrapper method for creation the MQ connection and immediate propagation
         of requested message with that
