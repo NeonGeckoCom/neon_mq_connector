@@ -54,6 +54,7 @@ class MQConnectorChild(MQConnector):
         self.exception = None
         self._consume_event = None
         self._consumer_restarted_event = None
+        self._vhost = "/neon_testing"
         self.observe_period = 10
         self.register_consumer(name="error", vhost=self.vhost, queue="error",
                                callback=self.callback_func_error,

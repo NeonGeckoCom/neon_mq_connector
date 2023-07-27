@@ -38,9 +38,6 @@ from ovos_utils.log import LOG
 
 from neon_mq_connector.utils.network_utils import b64_to_dict
 
-# TODO: Leave below to configuration
-logging.getLogger("pika").setLevel(logging.CRITICAL)
-
 _default_mq_config = {
     "server": "api.neon.ai",
     "port": 5672,
@@ -93,11 +90,12 @@ def send_mq_request(vhost: str, request_data: dict, target_queue: str,
 
     def handle_mq_response(channel: Channel, method, _, body):
         """
-            Method that handles Neon API output.
-            In case received output message with the desired id, event stops
+        Method that handles Neon API output.
+        In case received output message with the desired id, event stops
         """
         api_output = b64_to_dict(body)
         api_output_msg_id = api_output.get('message_id', None)
+
         if api_output_msg_id == message_id:
             LOG.debug(f'MQ output: {api_output}')
             channel.basic_ack(delivery_tag=method.delivery_tag)

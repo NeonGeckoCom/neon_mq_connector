@@ -218,16 +218,16 @@ class MQConnector(ABC):
         self.service_configurable_properties()
         """
         return {
-                'sync_period': 10,  # in seconds
-                'observe_period': 20,  # in seconds
-                'vhost_prefix': '',  # Could be used for scalability purposes
-                'default_testing_prefix': 'test',
-                'testing_envs': (f'{self.service_name.upper()}_TESTING',
-                                 'MQ_TESTING',),  # order matters
-                'testing_prefix_envs': (f'{self.service_name.upper()}'
-                                        f'_TESTING_PREFIX',
-                                        'MQ_TESTING_PREFIX',)  # order matters
-                }
+            'sync_period': 10,  # in seconds
+            'observe_period': 20,  # in seconds
+            'vhost_prefix': '',  # Could be used for scalability purposes
+            'default_testing_prefix': 'test',
+            'testing_envs': (f'{self.service_name.upper()}_TESTING',
+                             'MQ_TESTING',),  # order matters
+            'testing_prefix_envs': (f'{self.service_name.upper()}'
+                                    f'_TESTING_PREFIX',
+                                    'MQ_TESTING_PREFIX',)  # order matters
+        }
 
     @property
     def service_configurable_properties(self) -> Dict[str, Any]:
@@ -363,27 +363,31 @@ class MQConnector(ABC):
         :raises ValueError: invalid request data provided
         :returns message_id: id of the sent message
         """
-        if request_data and len(request_data) > 0 and isinstance(request_data, dict):
-            message_id = request_data.setdefault('message_id', cls.create_unique_id())
-            with connection.channel() as channel:
-                if exchange:
-                    channel.exchange_declare(exchange=exchange,
-                                             exchange_type=exchange_type,
-                                             auto_delete=False)
-                if queue:
-                    declared_queue = channel.queue_declare(queue=queue,
-                                                           auto_delete=False)
-                    if exchange_type == ExchangeType.fanout.value:
-                        channel.queue_bind(queue=declared_queue.method.queue,
-                                           exchange=exchange)
-                channel.basic_publish(exchange=exchange or '',
-                                      routing_key=queue,
-                                      body=dict_to_b64(request_data),
-                                      properties=pika.BasicProperties(
-                                          expiration=str(expiration)))
-            return message_id
-        else:
-            raise ValueError(f'Invalid request data provided: {request_data}')
+        if not isinstance(request_data, dict):
+            raise TypeError(f"Expected dict and got {type(request_data)}")
+        if not request_data:
+            raise ValueError(f'No request data provided')
+
+        message_id = request_data.setdefault('message_id', cls.create_unique_id())
+
+        with connection.channel() as channel:
+            if exchange:
+                channel.exchange_declare(exchange=exchange,
+                                         exchange_type=exchange_type,
+                                         auto_delete=False)
+            if queue:
+                declared_queue = channel.queue_declare(queue=queue,
+                                                       auto_delete=False)
+                if exchange_type == ExchangeType.fanout.value:
+                    channel.queue_bind(queue=declared_queue.method.queue,
+                                       exchange=exchange)
+            channel.basic_publish(exchange=exchange or '',
+                                  routing_key=queue,
+                                  body=dict_to_b64(request_data),
+                                  properties=pika.BasicProperties(
+                                      expiration=str(expiration)))
+        LOG.debug(f"sent message: {request_data['message_id']}")
+        return request_data['message_id']
 
     @classmethod
     def publish_message(cls,
@@ -435,18 +439,19 @@ class MQConnector(ABC):
             vhost = self.vhost
         if not connection_props:
             connection_props = {}
-        LOG.debug(f'Opening connection on vhost={vhost}')
+        LOG.debug(f'Opening connection on vhost={vhost} queue={queue}')
         with self.create_mq_connection(vhost=vhost,
                                        **connection_props) as mq_conn:
             if exchange_type in (ExchangeType.fanout,
                                  ExchangeType.fanout.value,):
-                LOG.debug('Sending fanout request to MQ')
+                LOG.debug(f'Sending fanout request to exchange: {exchange}')
                 msg_id = self.publish_message(connection=mq_conn,
                                               request_data=request_data,
                                               exchange=exchange,
                                               expiration=expiration)
             else:
-                LOG.debug(f'Sending {exchange_type} request to MQ')
+                LOG.debug(f'Sending {exchange_type} request to exchange '
+                          f'{exchange}')
                 msg_id = self.emit_mq_message(mq_conn,
                                               queue=queue,
                                               request_data=request_data,
@@ -693,7 +698,7 @@ class MQConnector(ABC):
         Iteratively observes each consumer, and if it was launched but is not
         alive - restarts it
         """
-        LOG.debug('Observers state observation')
+        # LOG.debug('Observers state observation')
         consumers_dict = copy.copy(self.consumers)
         for consumer_name, consumer_instance in consumers_dict.items():
             if self.consumer_properties[consumer_name]['started'] and \

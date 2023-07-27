@@ -42,7 +42,7 @@ class OldMQConnectorChild(MQConnector):
 
     def __init__(self, config: dict, service_name: str):
         super().__init__(config=config, service_name=service_name)
-        self.vhost = '/test'
+        self.vhost = '/neon_testing'
         self.func_1_ok = False
 
 
