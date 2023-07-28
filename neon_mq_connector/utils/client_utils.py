@@ -94,8 +94,17 @@ def send_mq_request(vhost: str, request_data: dict, target_queue: str,
         In case received output message with the desired id, event stops
         """
         api_output = b64_to_dict(body)
-        api_output_msg_id = api_output.get('message_id', None)
 
+        # The Messagebus connector generates a unique `message_id` for each
+        # response message. Check context for the original one; otherwise,
+        # check in output directly as some APIs emit responses without a unique
+        # message_id
+        api_output_msg_id = \
+            api_output.get('context',
+                           api_output).get('mq', api_output).get('message_id')
+        # TODO: One of these specs should be deprecated
+        if api_output_msg_id != api_output.get('message_id'):
+            LOG.debug(f"Handling message_id from response context")
         if api_output_msg_id == message_id:
             LOG.debug(f'MQ output: {api_output}')
             channel.basic_ack(delivery_tag=method.delivery_tag)
