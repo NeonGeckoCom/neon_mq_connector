@@ -369,7 +369,7 @@ class MQConnector(ABC):
             raise ValueError(f'No request data provided')
 
         # Ensure `message_id` in data will match context in messagebus connector
-        request_data.setdefault('message_id', request_data["context"]
+        request_data.setdefault('message_id', request_data.get("context", {})
                                 .get("mq", {}).get("message_id") or
                                 cls.create_unique_id())
 
