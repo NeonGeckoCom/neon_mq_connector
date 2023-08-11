@@ -370,7 +370,7 @@ class MQConnector(ABC):
 
         # Ensure `message_id` in data will match context in messagebus connector
         request_data.setdefault('message_id', request_data["context"]
-                                .get("mq", {}).get("routing_key") or
+                                .get("mq", {}).get("message_id") or
                                 cls.create_unique_id())
 
         with connection.channel() as channel:
