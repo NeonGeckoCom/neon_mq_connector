@@ -368,7 +368,10 @@ class MQConnector(ABC):
         if not request_data:
             raise ValueError(f'No request data provided')
 
-        message_id = request_data.setdefault('message_id', cls.create_unique_id())
+        # Ensure `message_id` in data will match context in messagebus connector
+        request_data.setdefault('message_id', request_data["context"]
+                                .get("mq", {}).get("routing_key") or
+                                cls.create_unique_id())
 
         with connection.channel() as channel:
             if exchange:
