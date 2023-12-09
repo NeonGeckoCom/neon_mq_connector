@@ -461,7 +461,7 @@ class MQConnector(ABC):
                                               exchange=exchange,
                                               exchange_type=exchange_type,
                                               expiration=expiration)
-        LOG.info(f'Message propagated, id={msg_id}')
+        LOG.debug(f'Message propagated, id={msg_id}')
         return msg_id
 
     @retry(use_self=True, num_retries=__run_retries__)
