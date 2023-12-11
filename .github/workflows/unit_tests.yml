@@ -39,8 +39,8 @@ jobs:
       - name: Run Connector Tests
         run: |
           pytest tests/test_connector.py --doctest-modules --junitxml=tests/connector-test-results.xml
-        env:
-          MQ_TESTING: 1
+#        env:
+#          MQ_TESTING: 1
       - name: Upload Connector test results
         uses: actions/upload-artifact@v2
         with:
