@@ -1,35 +1,52 @@
 # Changelog
 
-## [0.6.1a10](https://github.com/NeonGeckoCom/neon_mq_connector/tree/0.6.1a10) (2023-06-06)
+## [0.7.1](https://github.com/NeonGeckoCom/neon_mq_connector/tree/0.7.1) (2023-12-11)
 
-[Full Changelog](https://github.com/NeonGeckoCom/neon_mq_connector/compare/0.6.1a9...0.6.1a10)
+[Full Changelog](https://github.com/NeonGeckoCom/neon_mq_connector/compare/0.7.1a5...0.7.1)
+
+**Closed issues:**
+
+- remove hard-coded configuration of log level [\#87](https://github.com/NeonGeckoCom/neon_mq_connector/issues/87)
+
+## [0.7.1a5](https://github.com/NeonGeckoCom/neon_mq_connector/tree/0.7.1a5) (2023-12-09)
+
+[Full Changelog](https://github.com/NeonGeckoCom/neon_mq_connector/compare/0.7.1a4...0.7.1a5)
 
 **Merged pull requests:**
 
-- Updated Configuration, Permit Infinite Consumer Restarts [\#70](https://github.com/NeonGeckoCom/neon_mq_connector/pull/70) ([github-actions[bot]](https://github.com/apps/github-actions))
-- Update neon\_utils dependency spec to support 1.0 [\#61](https://github.com/NeonGeckoCom/neon_mq_connector/pull/61) ([github-actions[bot]](https://github.com/apps/github-actions))
-- Logging, testing, style updates and minor bugfixes [\#54](https://github.com/NeonGeckoCom/neon_mq_connector/pull/54) ([NeonDaniel](https://github.com/NeonDaniel))
-- Updated Exchanges, Publishing, Chatbots support [\#42](https://github.com/NeonGeckoCom/neon_mq_connector/pull/42) ([github-actions[bot]](https://github.com/apps/github-actions))
+- Reduce message emit log to `DEBUG` [\#93](https://github.com/NeonGeckoCom/neon_mq_connector/pull/93) ([NeonDaniel](https://github.com/NeonDaniel))
 
-## [0.6.1a9](https://github.com/NeonGeckoCom/neon_mq_connector/tree/0.6.1a9) (2023-05-01)
+## [0.7.1a4](https://github.com/NeonGeckoCom/neon_mq_connector/tree/0.7.1a4) (2023-08-11)
 
-[Full Changelog](https://github.com/NeonGeckoCom/neon_mq_connector/compare/0.6.1a8...0.6.1a9)
+[Full Changelog](https://github.com/NeonGeckoCom/neon_mq_connector/compare/0.7.1a3...0.7.1a4)
 
-## [0.6.1a8](https://github.com/NeonGeckoCom/neon_mq_connector/tree/0.6.1a8) (2023-04-27)
+**Merged pull requests:**
 
-[Full Changelog](https://github.com/NeonGeckoCom/neon_mq_connector/compare/0.6.1a7...0.6.1a8)
+- Update `message_id` handling for response routing [\#92](https://github.com/NeonGeckoCom/neon_mq_connector/pull/92) ([NeonDaniel](https://github.com/NeonDaniel))
 
-## [0.6.1a7](https://github.com/NeonGeckoCom/neon_mq_connector/tree/0.6.1a7) (2023-04-21)
+## [0.7.1a3](https://github.com/NeonGeckoCom/neon_mq_connector/tree/0.7.1a3) (2023-07-28)
 
-[Full Changelog](https://github.com/NeonGeckoCom/neon_mq_connector/compare/0.6.1a6...0.6.1a7)
+[Full Changelog](https://github.com/NeonGeckoCom/neon_mq_connector/compare/0.7.1a2...0.7.1a3)
 
-## [0.6.1a6](https://github.com/NeonGeckoCom/neon_mq_connector/tree/0.6.1a6) (2023-04-21)
+**Merged pull requests:**
 
-[Full Changelog](https://github.com/NeonGeckoCom/neon_mq_connector/compare/0.6.1a5...0.6.1a6)
+- Update message\_id handling for iris compat [\#91](https://github.com/NeonGeckoCom/neon_mq_connector/pull/91) ([NeonDaniel](https://github.com/NeonDaniel))
 
-## [0.6.1a5](https://github.com/NeonGeckoCom/neon_mq_connector/tree/0.6.1a5) (2023-04-21)
+## [0.7.1a2](https://github.com/NeonGeckoCom/neon_mq_connector/tree/0.7.1a2) (2023-07-27)
 
-[Full Changelog](https://github.com/NeonGeckoCom/neon_mq_connector/compare/0.6.0...0.6.1a5)
+[Full Changelog](https://github.com/NeonGeckoCom/neon_mq_connector/compare/0.7.1a1...0.7.1a2)
+
+**Merged pull requests:**
+
+- Update logging and response routing [\#89](https://github.com/NeonGeckoCom/neon_mq_connector/pull/89) ([NeonDaniel](https://github.com/NeonDaniel))
+
+## [0.7.1a1](https://github.com/NeonGeckoCom/neon_mq_connector/tree/0.7.1a1) (2023-07-26)
+
+[Full Changelog](https://github.com/NeonGeckoCom/neon_mq_connector/compare/0.7.0...0.7.1a1)
+
+**Merged pull requests:**
+
+- Bug Fix: Setting Generated Message ID as default value, skipping it while already set [\#90](https://github.com/NeonGeckoCom/neon_mq_connector/pull/90) ([NeonKirill](https://github.com/NeonKirill))
 
 
 
