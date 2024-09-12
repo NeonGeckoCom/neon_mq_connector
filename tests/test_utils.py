@@ -137,7 +137,7 @@ class TestMQConnectorUtils(unittest.TestCase):
         self.assertEqual(self.counter, 3)
 
     def test_wait_for_mq_startup(self):
-        self.assertTrue(wait_for_mq_startup("api.neon.ai", 5672))
+        self.assertTrue(wait_for_mq_startup("mq.neonaiservices.com", 5672))
         self.assertFalse(wait_for_mq_startup("www.neon.ai", 5672, 1))
 
     def setUp(self) -> None:
@@ -240,5 +240,5 @@ class TestNetworkUtils(unittest.TestCase):
 
     def test_check_port_is_open(self):
         from neon_mq_connector.utils.network_utils import check_port_is_open
-        self.assertTrue(check_port_is_open("api.neon.ai", 5672))
+        self.assertTrue(check_port_is_open("mq.neonaiservices.com", 5672))
         self.assertFalse(check_port_is_open("www.neon.ai", 5672))
