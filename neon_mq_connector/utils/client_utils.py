@@ -38,7 +38,7 @@ from ovos_utils.log import LOG
 from neon_mq_connector.utils.network_utils import b64_to_dict
 
 _default_mq_config = {
-    "server": "api.neon.ai",
+    "server": "mq.neonaiservices.com",
     "port": 5672,
     "users": {
         "mq_handler": {
