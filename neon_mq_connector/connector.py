@@ -33,6 +33,9 @@ import uuid
 import pika
 import pika.exceptions
 import threading
+import aio_pika
+from aio_pika.abc import AbstractIncomingMessage
+import asyncio
 
 from abc import ABC
 from typing import Optional, Dict, Any, Union
@@ -149,6 +152,83 @@ class ConsumerThread(threading.Thread):
                 super(ConsumerThread, self).join(timeout=timeout)
 
 
+class AsyncConsumer:
+    def __init__(self, connection_params,
+                 queue, callback_func: callable,
+                 error_func: callable = _default_error_handler,
+                 auto_ack: bool = True,
+                 queue_reset: bool = False,
+                 queue_exclusive: bool = False,
+                 exchange: Optional[str] = None,
+                 exchange_reset: bool = False,
+                 exchange_type: str = ExchangeType.direct, *args, **kwargs):
+        self.channel = None
+        self.connection = None
+        self.connection_params = connection_params
+        self.queue = queue
+        self.callback_func = lambda message: self.on_message(message, callback_func)
+        self.error_func = error_func
+        self.no_ack = auto_ack
+        self.queue_reset = queue_reset
+        self.queue_exclusive = queue_exclusive
+        self.exchange = exchange or ''
+        self.exchange_reset = exchange_reset
+        self.exchange_type = exchange_type or ExchangeType.direct
+        self._is_consuming = False
+        self._is_consumer_alive = True
+
+    async def connect(self):
+        self.connection = await aio_pika.connect_robust(**self.connection_params)
+        self.channel = await self.connection.channel()
+        await self.channel.set_qos(prefetch_count=50)
+        if self.queue_reset:
+            await self.channel.queue_delete(self.queue)
+        self.queue = await self.channel.declare_queue(
+            self.queue,
+            auto_delete=False,
+            exclusive=self.queue_exclusive
+        )
+        if self.exchange:
+            if self.exchange_reset:
+                await self.channel.exchange_delete(self.exchange)
+            self.exchange = await self.channel.declare_exchange(
+                self.exchange,
+                self.exchange_type,
+                auto_delete=False
+            )
+            await self.queue.bind(self.exchange)
+        await self.queue.consume(self.callback_func, no_ack=self.no_ack)
+
+    @property
+    def is_consumer_alive(self) -> bool:
+        return self._is_consumer_alive
+
+    async def on_message(self, message: AbstractIncomingMessage, callback: callable):
+        async with message.process():
+            await callback(message)
+
+    async def start(self):
+        if not self._is_consuming:
+            try:
+                await self.connect()
+                self._is_consuming = True
+            except Exception as e:
+                self._is_consuming = False
+                self.error_func(self, e)
+
+    async def stop(self):
+        if self._is_consumer_alive:
+            try:
+                await self.queue.cancel()
+                await self.channel.close()
+                await self.connection.close()
+            except Exception as e:
+                self.error_func(self, e)
+            finally:
+                self._is_consuming = False
+                self._is_consumer_alive = False
+
+
 class MQConnector(ABC):
     """
     Abstract class implementing interface for attaching services to MQ server
@@ -194,7 +274,7 @@ class MQConnector(ABC):
             self.property_key = 'properties'
         self._service_id = None
         self.service_name = service_name
-        self.consumers: Dict[str, ConsumerThread] = dict()
+        self.consumers: Dict[str, Union[ConsumerThread, AsyncConsumer]] = dict()
         self.consumer_properties = dict()
         self._vhost = None
         self._sync_thread = None
@@ -501,7 +581,8 @@ class MQConnector(ABC):
                           exchange_reset: bool = False,
                           queue_exclusive: bool = False,
                           skip_on_existing: bool = False,
-                          restart_attempts: int = __max_consumer_restarts__):
+                          restart_attempts: int = __max_consumer_restarts__,
+                          async_consumer=False):
         """
         Registers a consumer for the specified queue.
         The callback function will handle items in the queue.
@@ -537,14 +618,19 @@ class MQConnector(ABC):
                  queue=queue, queue_reset=queue_reset, callback_func=callback,
                  exchange=exchange, exchange_reset=exchange_reset,
                  exchange_type=exchange_type, error_func=error_handler,
-                 auto_ack=auto_ack, name=name, queue_exclusive=queue_exclusive,)
+                 auto_ack=auto_ack, name=name, queue_exclusive=queue_exclusive, )
         self.consumer_properties[name]['restart_attempts'] = \
             int(restart_attempts)
         self.consumer_properties[name]['started'] = False
-        self.consumers[name] = \
-            ConsumerThread(**self.consumer_properties[name]['properties'])
+        if async_consumer:
+            self.consumers[name] = \
+                AsyncConsumer(**self.consumer_properties[name]['properties'])
+        else:
+            self.consumers[name] = \
+                ConsumerThread(**self.consumer_properties[name]['properties'])
 
     def restart_consumer(self, name: str):
+        consumer_cls = type(self.consumers.get(name))
         self.stop_consumers(names=(name,), allow_restart=True)
         consumer_data = self.consumer_properties.get(name, {})
         restart_attempts = consumer_data.get('restart_attempts',
@@ -557,7 +643,7 @@ class MQConnector(ABC):
         elif 0 < restart_attempts < consumer_data.get('num_restarted', 0):
             err_msg = 'num restarts exceeded'
         else:
-            self.consumers[name] = ConsumerThread(**consumer_data['properties'])
+            self.consumers[name] = consumer_cls(**consumer_data['properties'])
             self.run_consumers(names=(name,))
             self.consumer_properties[name].setdefault('num_restarted', 0)
             self.consumer_properties[name]['num_restarted'] += 1
@@ -570,7 +656,8 @@ class MQConnector(ABC):
                             exchange: str = None, exchange_reset: bool = False,
                             auto_ack: bool = True,
                             skip_on_existing: bool = False,
-                            restart_attempts: int = __max_consumer_restarts__):
+                            restart_attempts: int = __max_consumer_restarts__,
+                            async_consumer=False):
         """
         Registers fanout exchange subscriber, wraps register_consumer()
         Any raised exceptions will be passed as arguments to on_error.
@@ -601,7 +688,8 @@ class MQConnector(ABC):
                                       exchange_reset=exchange_reset,
                                       auto_ack=auto_ack, queue_exclusive=True,
                                       skip_on_existing=skip_on_existing,
-                                      restart_attempts=restart_attempts)
+                                      restart_attempts=restart_attempts,
+                                      async_consumer=async_consumer)
 
     @staticmethod
     def default_error_handler(thread: ConsumerThread, exception: Exception):
@@ -618,10 +706,14 @@ class MQConnector(ABC):
         if not names or len(names) == 0:
             names = list(self.consumers)
         for name in names:
-            if isinstance(self.consumers.get(name), ConsumerThread) and self.consumers[name].is_consumer_alive:
-                self.consumers[name].daemon = daemon
-                self.consumers[name].start()
-                self.consumer_properties[name]['started'] = True
+            consumer = self.consumers.get(name)
+            if isinstance(consumer, ConsumerThread) and consumer.is_consumer_alive:
+                consumer.daemon = daemon
+                consumer.start()
+            elif isinstance(consumer, AsyncConsumer) and consumer.is_consumer_alive:
+                asyncio.create_task(consumer.start())
+
+            self.consumer_properties[name]['started'] = True
 
     def stop_consumers(self, names: tuple = (), allow_restart: bool = True):
         """
@@ -633,7 +725,10 @@ class MQConnector(ABC):
         for name in names:
             try:
                 if name in list(self.consumers):
-                    self.consumers[name].join(timeout=self.__consumer_join_timeout__, allow_restart=allow_restart)
+                    if isinstance(self.consumers[name], AsyncConsumer):
+                        asyncio.run(self.consumers[name].stop())
+                    elif isinstance(self.consumers[name], ConsumerThread):
+                        self.consumers[name].join(timeout=self.__consumer_join_timeout__, allow_restart=allow_restart)
                     self.consumer_properties[name]['is_alive'] = self.consumers[name].is_consumer_alive
                     self.consumer_properties[name]['started'] = False
                     self.consumers[name] = None
@@ -716,8 +811,9 @@ class MQConnector(ABC):
         consumers_dict = copy.copy(self.consumers)
         for consumer_name, consumer_instance in consumers_dict.items():
             if self.consumer_properties[consumer_name]['started'] and \
-                    not (isinstance(consumer_instance, ConsumerThread)
-                         and consumer_instance.is_alive()
+                    not (isinstance(consumer_instance, ConsumerThread) and
+                         not (isinstance(consumer_instance, AsyncConsumer))
+                         and (isinstance(consumer_instance, threading.Thread) and consumer_instance.is_alive())
                          and consumer_instance.is_consuming):
                 LOG.info(f'Consumer "{consumer_name}" is dead, restarting')
                 self.restart_consumer(name=consumer_name)
