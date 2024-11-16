@@ -33,8 +33,6 @@ import uuid
 import pika
 import pika.exceptions
 import threading
-import aio_pika
-from aio_pika.abc import AbstractIncomingMessage
 import asyncio
 
 from abc import ABC
@@ -43,213 +41,17 @@ from pika.exchange_type import ExchangeType
 from ovos_utils.log import LOG
 
 from neon_mq_connector.config import load_neon_mq_config
-from neon_mq_connector.utils import RepeatingTimer, retry, wait_for_mq_startup
+from neon_mq_connector.consumer import ConsumerThread
+
+try:
+    from neon_mq_connector.aio.consumer import AsyncConsumer
+except ImportError:
+    LOG.warning("cannot use AsyncConsumer - `aio` dependencies are missing")
+    AsyncConsumer = None
+
+from neon_mq_connector.utils.connection_utils import wait_for_mq_startup, retry
 from neon_mq_connector.utils.network_utils import dict_to_b64
-
-
-def _default_error_handler(*args):
-    LOG.warning("Error handler not defined")
-    raise Exception(*args)
-
-
-class ConsumerThread(threading.Thread):
-
-    # retry to handle connection failures in case MQ server is still starting
-    def __init__(self,
-                 connection_params: pika.ConnectionParameters,
-                 queue: str, callback_func: callable,
-                 error_func: callable = _default_error_handler,
-                 auto_ack: bool = True,
-                 queue_reset: bool = False,
-                 queue_exclusive: bool = False,
-                 exchange: Optional[str] = None,
-                 exchange_reset: bool = False,
-                 exchange_type: str = ExchangeType.direct,
-                 *args, **kwargs):
-        """
-        Rabbit MQ Consumer class that aims at providing unified configurable
-        interface for consumer threads
-        :param connection_params: pika connection parameters
-        :param queue: Desired consuming queue
-        :param callback_func: logic on message receiving
-        :param error_func: handler for consumer thread errors
-        :param auto_ack: Boolean to enable ack of messages upon receipt
-        :param queue_reset: If True, delete an existing queue `queue`
-        :param queue_exclusive: Marks declared queue as exclusive
-            to a given channel (deletes with it)
-        :param exchange: exchange to bind queue to (optional)
-        :param exchange_reset: If True, delete an existing exchange `exchange`
-        :param exchange_type: type of exchange to bind to from ExchangeType
-            (defaults to direct)
-            follow: https://www.rabbitmq.com/tutorials/amqp-concepts.html
-            to learn more about different exchanges
-        """
-        threading.Thread.__init__(self, *args, **kwargs)
-        self._is_consuming = False  # annotates that ConsumerThread is running
-        self._is_consumer_alive = True  # annotates that ConsumerThread is alive and shall be recreated
-        self.connection = pika.BlockingConnection(connection_params)
-        self.callback_func = callback_func
-        self.error_func = error_func
-        self.exchange = exchange or ''
-        self.exchange_type = exchange_type or ExchangeType.direct
-        self.queue = queue or ''
-        self.channel = self.connection.channel()
-        self.channel.basic_qos(prefetch_count=50)
-        if queue_reset:
-            self.channel.queue_delete(queue=self.queue)
-        declared_queue = self.channel.queue_declare(queue=self.queue,
-                                                    auto_delete=False,
-                                                    exclusive=queue_exclusive)
-        if self.exchange:
-            if exchange_reset:
-                self.channel.exchange_delete(exchange=self.exchange)
-            self.channel.exchange_declare(exchange=self.exchange,
-                                          exchange_type=self.exchange_type,
-                                          auto_delete=False)
-            self.channel.queue_bind(queue=declared_queue.method.queue,
-                                    exchange=self.exchange)
-        self.channel.basic_consume(on_message_callback=self.callback_func,
-                                   queue=self.queue,
-                                   auto_ack=auto_ack)
-
-    @property
-    def is_consumer_alive(self) -> bool:
-        return self._is_consumer_alive
-
-    @property
-    def is_consuming(self) -> bool:
-        return self._is_consuming
-
-    def run(self):
-        """Creating consumer channel"""
-        if not self._is_consuming:
-            try:
-                super(ConsumerThread, self).run()
-                self._is_consuming = True
-                self.channel.start_consuming()
-            except Exception as e:
-                self._is_consuming = False
-                if isinstance(e, pika.exceptions.ChannelClosed):
-                    LOG.error(f"Channel closed by broker: {self.callback_func}")
-                else:
-                    LOG.error(e)
-                    self.error_func(self, e)
-                self.join(allow_restart=True)
-
-    def join(self, timeout: Optional[float] = ..., allow_restart: bool = True) -> None:
-        """Terminating consumer channel"""
-        if self._is_consumer_alive:
-            try:
-                self.channel.stop_consuming()
-                if self.channel.is_open:
-                    self.channel.close()
-                if self.connection.is_open:
-                    self.connection.close()
-            except Exception as x:
-                LOG.error(x)
-            finally:
-                self._is_consuming = False
-                if not allow_restart:
-                    self._is_consumer_alive = False
-                super(ConsumerThread, self).join(timeout=timeout)
-
-
-class AsyncConsumer:
-    def __init__(
-        self,
-        connection_params,
-        queue,
-        callback_func: callable,
-        error_func: callable = _default_error_handler,
-        auto_ack: bool = True,
-        queue_reset: bool = False,
-        queue_exclusive: bool = False,
-        exchange: Optional[str] = None,
-        exchange_reset: bool = False,
-        exchange_type: str = ExchangeType.direct,
-        *args,
-        **kwargs,
-    ):
-        self.channel = None
-        self.connection = None
-        self.connection_params = connection_params
-        self.queue = queue
-        self.callback_func = lambda message: self._async_on_message_wrapper(message, callback_func)
-        self.error_func = error_func
-        self.no_ack = auto_ack
-        self.queue_reset = queue_reset
-        self.queue_exclusive = queue_exclusive
-        self.exchange = exchange or ''
-        self.exchange_reset = exchange_reset
-        self.exchange_type = exchange_type or ExchangeType.direct
-        self._is_consuming = False
-        self._is_consumer_alive = True
-
-    async def connect(self) -> None:
-        """
-        Utilises aio-pika as a base interface for establishing async MQ connection
-        Upon establishing connection, declares queue and exchange if applicable
-        """
-        self.connection = await aio_pika.connect_robust(**self.connection_params)
-        self.channel = await self.connection.channel()
-        await self.channel.set_qos(prefetch_count=50)
-        if self.queue_reset:
-            await self.channel.queue_delete(self.queue)
-        self.queue = await self.channel.declare_queue(
-            self.queue,
-            auto_delete=False,
-            exclusive=self.queue_exclusive
-        )
-        if self.exchange:
-            if self.exchange_reset:
-                await self.channel.exchange_delete(self.exchange)
-            self.exchange = await self.channel.declare_exchange(
-                self.exchange,
-                self.exchange_type,
-                auto_delete=False
-            )
-            await self.queue.bind(self.exchange)
-        await self.queue.consume(self.callback_func, no_ack=self.no_ack)
-
-    @property
-    def is_consumer_alive(self) -> bool:
-        """
-        Flag specifying whether consumer thread is alive
-        :return: True if consumer thread is alive, False otherwise
-        """
-        return self._is_consumer_alive
-
-    async def start(self):
-        if not self._is_consuming:
-            try:
-                await self.connect()
-                self._is_consuming = True
-            except Exception as e:
-                self._is_consuming = False
-                self.error_func(self, e)
-
-    async def stop(self):
-        if self._is_consumer_alive:
-            try:
-                await self.queue.cancel()
-                await self.channel.close()
-                await self.connection.close()
-            except Exception as e:
-                self.error_func(self, e)
-            finally:
-                self._is_consuming = False
-                self._is_consumer_alive = False
-
-    @classmethod
-    async def _async_on_message_wrapper(cls, message: AbstractIncomingMessage, callback: callable):
-        """
-        Async wrapper to process asynchronous MQ messages
-        :param message: `AbstractIncomingMessage` instance
-        :param callback: the actual callback function
-        :return:
-        """
-        async with message.process(ignore_processed=True):
-            await callback(message)
+from neon_mq_connector.utils.thread_utils import RepeatingTimer
 
 
 class MQConnector(ABC):
@@ -784,7 +586,7 @@ class MQConnector(ABC):
             if isinstance(consumer, ConsumerThread) and consumer.is_consumer_alive:
                 consumer.daemon = daemon
                 consumer.start()
-            elif isinstance(consumer, AsyncConsumer) and consumer.is_consumer_alive:
+            elif AsyncConsumer is not None and isinstance(consumer, AsyncConsumer) and consumer.is_consumer_alive:
                 asyncio.create_task(consumer.start())
 
             self.consumer_properties[name]['started'] = True
