@@ -66,3 +66,35 @@ A response may be sent via:
                        )
 ```
 Where `<queue>` is the queue to which the response will be published, and `data` is a `bytes` response (generally a `base64`-encoded `dict`).
+
+### [BETA] Asynchronous Consumers
+
+Now there is a support for async-based consumers handling based on `aio-pika` API.
+
+#### Installation
+
+To install async dependencies, run installation with `[aio]` extra:
+```shell
+pip install neon-mq-connector[aio]
+```
+
+#### Enabling in a code
+
+When declaring the consumer/subscriber instances, specify `async_consumer` param like follows:
+```python
+register_consumer(name="some_consumer",
+                  ...
+                  async_consumer=True,)
+register_subscriber(name="some_subscriber",
+                    ...
+                    async_consumer=True,)
+```
+
+To set creation of async consumers/subscribers globally, set the class-attribute `async_consumers_enabled` to True:
+
+```python
+from neon_mq_connector import MQConnector
+
+class MQConnectorChild(MQConnector):
+   async_consumers_enabled  = True
+```
