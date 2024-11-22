@@ -27,6 +27,12 @@
 # SOFTWARE,  EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 from functools import wraps
+
+try:
+    from aio_pika.abc import AbstractIncomingMessage
+except ImportError:
+    AbstractIncomingMessage = None
+
 from ovos_utils.log import LOG
 
 from neon_mq_connector.utils.network_utils import b64_to_dict
@@ -45,6 +51,9 @@ def create_mq_callback(include_callback_props: tuple = ('body',)):
             mq_props = ['channel', 'method', 'properties', 'body']
 
             callback_kwargs = {}
+
+            if isinstance(f_args[0], AbstractIncomingMessage):
+                f_args = (f_args[0].channel, f_args[0].delivery_mode, f_args[0].properties, f_args[0].body)
 
             for idx in range(len(mq_props)):
                 if mq_props[idx] in include_callback_props:

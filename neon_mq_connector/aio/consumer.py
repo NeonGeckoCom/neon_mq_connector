@@ -1,7 +1,7 @@
-import asyncio
 from typing import Optional
 
 import aio_pika
+import asyncio
 
 from aio_pika.abc import AbstractIncomingMessage
 from aio_pika.exchange import ExchangeType
@@ -39,16 +39,14 @@ class AsyncConsumer:
         self.exchange_type = exchange_type or ExchangeType.DIRECT.value
         self._is_consuming = False
         self._is_consumer_alive = True
-        self.event_loop = asyncio.new_event_loop()
 
     async def create_connection(self):
         return await aio_pika.connect_robust(
             host=self.connection_params.host,
             port=self.connection_params.port,
-            login=self.connection_params.username,
-            password=self.connection_params.password,
+            login=self.connection_params.credentials.username,
+            password=self.connection_params.credentials.password,
             virtualhost=self.connection_params.virtual_host,
-            loop=self.event_loop,
         )
 
     async def connect(self) -> None:
@@ -76,6 +74,7 @@ class AsyncConsumer:
             )
             await self.queue.bind(self.exchange)
         await self.queue.consume(self.callback_func, no_ack=self.no_ack)
+        await asyncio.Future()
 
     @property
     def is_consumer_alive(self) -> bool:

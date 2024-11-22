@@ -445,7 +445,7 @@ class MQConnector(ABC):
         if exchange_type == ExchangeType.fanout.value:
             LOG.info(f'Subscriber queue registered: {queue} '
                      f'[subscriber_name={name},exchange={exchange},vhost={vhost}]')
-        elif exchange_type == ExchangeType.direct.value:
+        elif not exchange_type or exchange_type == ExchangeType.direct.value:
             LOG.info(f'Consumer queue registered: {queue} '
                      f'[subscriber_name={name},exchange={exchange},vhost={vhost}]')
 
@@ -567,7 +567,7 @@ class MQConnector(ABC):
     def default_error_handler(thread: ConsumerThread, exception: Exception):
         LOG.error(f"{exception} occurred in {thread}")
 
-    def run_consumers(
+    async def run_consumers(
         self,
         names: Optional[tuple] = None,
         daemon=True
@@ -579,6 +579,7 @@ class MQConnector(ABC):
         :param names: names of consumers to consider
         :param daemon: to kill consumer threads once main thread is over
         """
+        tasks = []
         if not names or len(names) == 0:
             names = list(self.consumers)
         for name in names:
@@ -587,9 +588,10 @@ class MQConnector(ABC):
                 consumer.daemon = daemon
                 consumer.start()
             elif AsyncConsumer is not None and isinstance(consumer, AsyncConsumer) and consumer.is_consumer_alive:
-                asyncio.create_task(consumer.start())
+                tasks.append(asyncio.create_task(consumer.start()))
 
             self.consumer_properties[name]['started'] = True
+        await asyncio.gather(*tasks, return_exceptions=True)
 
     def stop_consumers(self,
                        names: Optional[tuple] = None,
@@ -656,7 +658,7 @@ class MQConnector(ABC):
         use_self=True,
         num_retries=__run_retries__,
     )
-    def run(
+    async def run(
         self,
         run_consumers: bool = True,
         run_sync: bool = True,
@@ -678,7 +680,7 @@ class MQConnector(ABC):
         kwargs.setdefault('daemonize_consumers', False)
         self.pre_run(**kwargs)
         if run_consumers:
-            self.run_consumers(names=kwargs['consumer_names'],
+            await self.run_consumers(names=kwargs['consumer_names'],
                                daemon=kwargs['daemonize_consumers'])
         if run_sync:
             self.sync_thread.start()
