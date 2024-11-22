@@ -1,3 +1,4 @@
+import asyncio
 from typing import Optional
 
 import aio_pika
@@ -38,13 +39,24 @@ class AsyncConsumer:
         self.exchange_type = exchange_type or ExchangeType.DIRECT.value
         self._is_consuming = False
         self._is_consumer_alive = True
+        self.event_loop = asyncio.new_event_loop()
+
+    async def create_connection(self):
+        return await aio_pika.connect_robust(
+            host=self.connection_params.host,
+            port=self.connection_params.port,
+            login=self.connection_params.username,
+            password=self.connection_params.password,
+            virtualhost=self.connection_params.virtual_host,
+            loop=self.event_loop,
+        )
 
     async def connect(self) -> None:
         """
         Utilises aio-pika as a base interface for establishing async MQ connection
         Upon establishing connection, declares queue and exchange if applicable
         """
-        self.connection = await aio_pika.connect_robust(**self.connection_params)
+        self.connection = await self.create_connection()
         self.channel = await self.connection.channel()
         await self.channel.set_qos(prefetch_count=50)
         if self.queue_reset:
