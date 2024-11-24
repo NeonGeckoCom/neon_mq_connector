@@ -1,4 +1,5 @@
 import threading
+import time
 
 from typing import Optional
 
@@ -11,7 +12,6 @@ from neon_mq_connector.utils import consumer_utils
 
 class ConsumerThread(threading.Thread):
 
-    # retry to handle connection failures in case MQ server is still starting
     def __init__(self,
                  connection_params: pika.ConnectionParameters,
                  queue: str, callback_func: callable,
@@ -53,22 +53,39 @@ class ConsumerThread(threading.Thread):
         self.queue_exclusive = queue_exclusive
         self.auto_ack = auto_ack
 
+        self.connection_params = connection_params
         self.queue_reset = queue_reset
         self.exchange_reset = exchange_reset
 
-        self.connection = pika.SelectConnection(parameters=connection_params,
-                                                on_open_callback=self.on_connected,
-                                                on_close_callback=self.on_close,)
+        self.connection = self.create_connection()
+        self.connection_failed_attempts = 0
+        self.max_connection_failed_attempts = 3
+
+    def create_connection(self):
+        return pika.SelectConnection(parameters=self.connection_params,
+                                     on_open_callback=self.on_connected,
+                                     on_open_error_callback=self.on_connection_fail,
+                                     on_close_callback=self.on_close,)
 
     def on_connected(self, _):
         """Called when we are fully connected to RabbitMQ"""
         self.connection.channel(on_open_callback=self.on_channel_open)
+
+    def on_connection_fail(self, _):
+        """ Called when connection to RabbitMQ fails"""
+        self.connection_failed_attempts += 1
+        if self.connection_failed_attempts > self.max_connection_failed_attempts:
+            LOG.error(f'Failed establish MQ connection after {self.max_connection_failed_attempts} attempts')
+            self.join(timeout=1)
+        else:
+            self.reconnect()
 
     def on_channel_open(self, new_channel):
         """Called when our channel has opened"""
         self.channel = new_channel
         if self.queue_reset:
             self.channel.queue_delete(queue=self.queue,
+                                      if_unused=True,
                                       callback=self.declare_queue)
         else:
             self.declare_queue()
@@ -122,8 +139,9 @@ class ConsumerThread(threading.Thread):
         except Exception as e:
             self.error_func(self, e)
 
-    def on_close(self, connection, exception):
-        self.connection.ioloop.stop()
+    def on_close(self, _, e):
+        LOG.error(f"Closing MQ connection due to exception: {e}")
+        self.join()
 
     @property
     def is_consumer_alive(self) -> bool:
@@ -141,27 +159,28 @@ class ConsumerThread(threading.Thread):
                 self._is_consuming = True
                 self.connection.ioloop.start()
             except Exception as e:
+                LOG.error(f"Failed to start io loop on consumer thread {self.name!r}: {e}")
                 self._is_consuming = False
-                if isinstance(e, pika.exceptions.ChannelClosed):
-                    LOG.error(f"Channel closed by broker: {self.callback_func}")
-                else:
-                    LOG.error(e)
-                    self.error_func(self, e)
                 self.join(allow_restart=True)
 
-    def join(self, timeout: Optional[float] = ..., allow_restart: bool = True) -> None:
+    def _close_connection(self):
+        try:
+            if self.connection and not (self.connection.is_closed or self.connection.is_closing):
+                self.connection.ioloop.stop()
+                self.connection.close()
+        except Exception as e:
+            LOG.error(f"Failed to close connection for Consumer {self.name!r}: {e}")
+        self._is_consuming = False
+
+    def reconnect(self, wait_interval: int = 1):
+        self._close_connection()
+        time.sleep(wait_interval)
+        self.run()
+
+    def join(self, timeout: Optional[float] = None, allow_restart: bool = True) -> None:
         """Terminating consumer channel"""
-        if self._is_consumer_alive:
-            try:
-                if not (self.connection.is_closed or self.connection.is_closing):
-                    self.connection.close()
-            except Exception as x:
-                LOG.error(x)
-            finally:
-                self._is_consuming = False
-                if not allow_restart:
-                    self._is_consumer_alive = False
-            try:
-                super(ConsumerThread, self).join(timeout=timeout)
-            except RuntimeError:
-                pass
+        super().join(timeout=timeout)
+        if self.is_consumer_alive:
+            self._close_connection()
+            if not allow_restart:
+                self._is_consumer_alive = False
