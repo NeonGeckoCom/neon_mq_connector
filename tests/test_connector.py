@@ -152,10 +152,10 @@ class MQConnectorChildTest(unittest.TestCase):
 
         self.connector_instance.send_message(queue='test',
                                              request_data={'data': 'Hello!'},
-                                             expiration=10000)
+                                             expiration=4000)
         self.connector_instance.send_message(queue='test1',
                                              request_data={'data': 'Hello 2!'},
-                                             expiration=10000)
+                                             expiration=4000)
 
         self.connector_instance.consume_event.wait(10)
 
