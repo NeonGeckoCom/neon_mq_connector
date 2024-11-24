@@ -87,19 +87,12 @@ class BlockingConsumerThread(threading.Thread):
                 self._is_consuming = True
                 self.channel.start_consuming()
             except Exception as e:
-                if isinstance(e, pika.exceptions.ChannelClosed):
-                    LOG.error(f"Channel closed by broker: {self.callback_func}")
-                    self.error_func(self, e)
-                elif isinstance(e, pika.exceptions.StreamLostError):
-                    LOG.info(f"Received connection close: {e}")
-                else:
-                    LOG.error(f"Unexpected error: {e}")
                 self.error_func(self, e)
                 self.join(allow_restart=True)
 
     def join(self, timeout: Optional[float] = ..., allow_restart: bool = True) -> None:
         """Terminating consumer channel"""
-        if self._is_consumer_alive and self._is_consuming:
+        if self.is_consumer_alive and self.is_consuming:
             self._is_consuming = False
             try:
                 self.channel.stop_consuming()
