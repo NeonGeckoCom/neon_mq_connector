@@ -156,14 +156,13 @@ class SelectConsumerThread(threading.Thread):
 
     def run(self):
         """Starting connnection io loop """
-        if not self._is_consuming:
+        if not self.is_consuming:
             try:
                 super(SelectConsumerThread, self).run()
                 self._is_consuming = True
                 self.connection.ioloop.start()
             except Exception as e:
                 LOG.error(f"Failed to start io loop on consumer thread {self.name!r}: {e}")
-                self._is_consuming = False
                 self.join(allow_restart=True)
 
     def _close_connection(self):
@@ -182,7 +181,8 @@ class SelectConsumerThread(threading.Thread):
 
     def join(self, timeout: Optional[float] = None, allow_restart: bool = True) -> None:
         """Terminating consumer channel"""
-        if self.is_consumer_alive:
+        if self.is_consumer_alive and self.is_consuming:
+            self._is_consuming = False
             self._close_connection()
             if not allow_restart:
                 self._is_consumer_alive = False
