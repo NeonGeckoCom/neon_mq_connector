@@ -10,7 +10,10 @@ from pika.exchange_type import ExchangeType
 from neon_mq_connector.utils import consumer_utils
 
 
-class ConsumerThread(threading.Thread):
+class SelectConsumerThread(threading.Thread):
+    """
+    Consumer thread implementation based on pika.SelectConnection
+    """
 
     def __init__(self,
                  connection_params: pika.ConnectionParameters,
@@ -155,7 +158,7 @@ class ConsumerThread(threading.Thread):
         """Starting connnection io loop """
         if not self._is_consuming:
             try:
-                super(ConsumerThread, self).run()
+                super(SelectConsumerThread, self).run()
                 self._is_consuming = True
                 self.connection.ioloop.start()
             except Exception as e:
@@ -179,8 +182,8 @@ class ConsumerThread(threading.Thread):
 
     def join(self, timeout: Optional[float] = None, allow_restart: bool = True) -> None:
         """Terminating consumer channel"""
-        super().join(timeout=timeout)
         if self.is_consumer_alive:
             self._close_connection()
             if not allow_restart:
                 self._is_consumer_alive = False
+        super().join(timeout=timeout)

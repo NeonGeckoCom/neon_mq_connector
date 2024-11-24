@@ -29,9 +29,12 @@
 import os
 import unittest
 
+from parameterized import parameterized
+
 from neon_mq_connector import MQConnector
 from neon_mq_connector.config import Configuration
-from neon_mq_connector.connector import ConsumerThread
+from neon_mq_connector.connector import ConsumerThreadInstance
+from neon_mq_connector.consumers import SelectConsumerThread, BlockingConsumerThread
 
 
 class OldMQConnectorChild(MQConnector):
@@ -55,9 +58,27 @@ class TestBackwardCompatibility(unittest.TestCase):
                                             service_name='test')
         cls.connector.run(run_sync=False)
 
+    @parameterized.expand(
+        input=[
+            (
+                "async_mode_enabled",  # test name
+                True,  # async consumer flag
+                SelectConsumerThread,  # expected consumer instance
+            ),
+            (
+                "async_mode_disabled",
+                False,
+                BlockingConsumerThread,
+            )
+        ]
+    )
     def test_stable_register_consumer_args(
         self,
+        test_name,
+        async_mode_enabled,
+        expected_consumer_instance,
     ):
+        self.connector.async_consumers_enabled = async_mode_enabled
         # Required connector.register_consumer() arguments order:
         # name: str, vhost: str, queue: str,
         # callback: callable, on_error: Optional[callable] = None,
@@ -71,5 +92,5 @@ class TestBackwardCompatibility(unittest.TestCase):
             auto_ack=False,
         )
 
-        self.assertIsInstance(self.connector.consumers['test_consumer'], ConsumerThread)
+        self.assertIsInstance(self.connector.consumers['test_consumer'], expected_consumer_instance)
         self.assertEqual(self.connector.consumers['test_consumer'].queue, 'test')

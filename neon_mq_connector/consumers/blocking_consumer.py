@@ -8,7 +8,10 @@ from pika.exchange_type import ExchangeType
 from neon_mq_connector.utils import consumer_utils
 
 
-class ConsumerThread(threading.Thread):
+class BlockingConsumerThread(threading.Thread):
+    """
+    Consumer thread implementation based on pika.BlockingConnection
+    """
 
     # retry to handle connection failures in case MQ server is still starting
     def __init__(self,
@@ -80,31 +83,31 @@ class ConsumerThread(threading.Thread):
         """Creating consumer channel"""
         if not self._is_consuming:
             try:
-                super(ConsumerThread, self).run()
+                super(BlockingConsumerThread, self).run()
                 self._is_consuming = True
                 self.channel.start_consuming()
             except Exception as e:
-                self._is_consuming = False
                 if isinstance(e, pika.exceptions.ChannelClosed):
                     LOG.error(f"Channel closed by broker: {self.callback_func}")
-                else:
-                    LOG.error(e)
                     self.error_func(self, e)
+                elif isinstance(e, pika.exceptions.StreamLostError):
+                    LOG.info(f"Received connection close: {e}")
+                else:
+                    LOG.error(f"Unexpected error: {e}")
+                self.error_func(self, e)
                 self.join(allow_restart=True)
 
     def join(self, timeout: Optional[float] = ..., allow_restart: bool = True) -> None:
         """Terminating consumer channel"""
-        if self._is_consumer_alive:
+        if self._is_consumer_alive and self._is_consuming:
+            self._is_consuming = False
             try:
                 self.channel.stop_consuming()
-                if self.channel.is_open:
-                    self.channel.close()
                 if self.connection.is_open:
                     self.connection.close()
-            except Exception as x:
-                LOG.error(x)
+            except Exception as e:
+                LOG.error(f"Failed to stop consumer thread: {e}")
             finally:
-                self._is_consuming = False
                 if not allow_restart:
                     self._is_consumer_alive = False
-                super(ConsumerThread, self).join(timeout=timeout)
+                super(BlockingConsumerThread, self).join(timeout=timeout)
