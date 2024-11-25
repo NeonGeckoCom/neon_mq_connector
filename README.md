@@ -69,7 +69,7 @@ Where `<queue>` is the queue to which the response will be published, and `data`
 
 ### [BETA] Asynchronous Consumers
 
-Now there is a support for async-based consumers handling based on `pioka.SelectConnection`
+Now there is a support for async-based consumers handling based on `pika.SelectConnection`
 
 #### Enabling in a code
 

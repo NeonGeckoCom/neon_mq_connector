@@ -32,7 +32,6 @@ import time
 import uuid
 import pika
 import pika.exceptions
-import threading
 
 from abc import ABC
 from typing import Optional, Dict, Any, Union, Type
@@ -247,9 +246,10 @@ class MQConnector(ABC):
             val = f'/{val}'
         self._vhost = val
 
-    def get_connection_params(self, vhost: str, **kwargs) -> pika.ConnectionParameters:
+    def get_connection_params(self, vhost: str, **kwargs) -> \
+            pika.ConnectionParameters:
         """
-        Gets connection parameters to be used to create the MQ connection
+        Gets connection parameters to be used to create an mq connection
         :param vhost: virtual_host to connect to
         """
         connection_params = pika.ConnectionParameters(
@@ -285,7 +285,7 @@ class MQConnector(ABC):
             (defaults to 1 second)
 
         :raises ValueError: invalid request data provided
-        :returns message_id: id of the published message
+        :returns message_id: id of the sent message
         """
         if not isinstance(request_data, dict):
             raise TypeError(f"Expected dict and got {type(request_data)}")
@@ -331,7 +331,7 @@ class MQConnector(ABC):
             (defaults to 1 second)
 
         :raises ValueError: invalid request data provided
-        :returns message_id: id of the published message
+        :returns message_id: id of the sent message
         """
         return cls.emit_mq_message(connection=connection,
                                    request_data=request_data, exchange=exchange,
@@ -371,13 +371,13 @@ class MQConnector(ABC):
                                        **connection_props) as mq_conn:
             if exchange_type in (ExchangeType.fanout,
                                  ExchangeType.fanout.value,):
-                LOG.info(f'Sending fanout request to exchange: {exchange}')
+                LOG.debug(f'Sending fanout request to exchange: {exchange}')
                 msg_id = self.publish_message(connection=mq_conn,
                                               request_data=request_data,
                                               exchange=exchange,
                                               expiration=expiration)
             else:
-                LOG.info(f'Sending {exchange_type} request to exchange '
+                LOG.debug(f'Sending {exchange_type} request to exchange '
                           f'{exchange}')
                 msg_id = self.emit_mq_message(mq_conn,
                                               queue=queue,
@@ -385,7 +385,7 @@ class MQConnector(ABC):
                                               exchange=exchange,
                                               exchange_type=exchange_type,
                                               expiration=expiration)
-        LOG.info(f'Message propagated, id={msg_id}')
+        LOG.debug(f'Message propagated, id={msg_id}')
         return msg_id
 
     @retry(use_self=True, num_retries=__run_retries__)
@@ -402,33 +402,25 @@ class MQConnector(ABC):
         return pika.BlockingConnection(
             parameters=self.get_connection_params(vhost, **kwargs))
 
-    def register_consumer(
-        self,
-        name: str,
-        vhost: str,
-        queue: str,
-        callback: callable,
-        on_error: Optional[callable] = None,
-        auto_ack: bool = True,
-        queue_reset: bool = False,
-        exchange: str = None,
-        exchange_type: str = None,
-        exchange_reset: bool = False,
-        queue_exclusive: bool = False,
-        skip_on_existing: bool = False,
-        restart_attempts: Optional[int] = None,
-    ) -> None:
+    def register_consumer(self, name: str, vhost: str, queue: str,
+                          callback: callable,
+                          on_error: Optional[callable] = None,
+                          auto_ack: bool = True, queue_reset: bool = False,
+                          exchange: str = None, exchange_type: str = None,
+                          exchange_reset: bool = False,
+                          queue_exclusive: bool = False,
+                          skip_on_existing: bool = False,
+                          restart_attempts: int = __max_consumer_restarts__):
         """
         Registers a consumer for the specified queue.
         The callback function will handle items in the queue.
         Any raised exceptions will be passed as arguments to on_error.
-
-        :param name: human-readable name of the consumer
+        :param name: Human readable name of the consumer
         :param vhost: vhost to register on
         :param queue: MQ Queue to read messages from
         :param queue_reset: to delete queue if exists (defaults to False)
         :param exchange: MQ Exchange to bind to
-        :param exchange_reset: delete exchange if exists (defaults to False)
+        :param exchange_reset: to delete exchange if exists (defaults to False)
         :param exchange_type: Type of MQ Exchange to use, documentation:
             https://www.rabbitmq.com/tutorials/amqp-concepts.html
         :param callback: Method to passed queued messages to
@@ -440,47 +432,25 @@ class MQConnector(ABC):
         :param restart_attempts: max instance restart attempts
             (if < 0 - will restart infinitely times)
         """
-
-        if exchange_type == ExchangeType.fanout.value:
-            LOG.info(f'Subscriber queue registered: {queue} '
-                     f'[subscriber_name={name},exchange={exchange},vhost={vhost}]')
-        elif not exchange_type or exchange_type == ExchangeType.direct.value:
-            LOG.info(f'Consumer queue registered: {queue} '
-                     f'[subscriber_name={name},exchange={exchange},vhost={vhost}]')
-
-        if restart_attempts is None:
-            restart_attempts = self.__max_consumer_restarts__
-
         error_handler = on_error or self.default_error_handler
         consumer = self.consumers.get(name, None)
         if consumer:
             # Gracefully terminating
             if skip_on_existing:
-                LOG.warning(f'Consumer under index "{name}" already declared')
+                LOG.info(f'Consumer under index "{name}" already declared')
                 return
             self.stop_consumers(names=(name,), allow_restart=False)
         self.consumer_properties.setdefault(name, {})
-
-        self.consumer_properties[name]['properties'] = {
-            "connection_params": self.get_connection_params(vhost),
-            "queue": queue,
-            "queue_reset": queue_reset,
-            "callback_func": callback,
-            "exchange": exchange,
-            "exchange_reset": exchange_reset,
-            "exchange_type": exchange_type,
-            "error_func": error_handler,
-            "auto_ack": auto_ack,
-            "name": name,
-            "queue_exclusive": queue_exclusive,
-        }
+        self.consumer_properties[name]['properties'] = \
+            dict(connection_params=self.get_connection_params(vhost),
+                 queue=queue, queue_reset=queue_reset, callback_func=callback,
+                 exchange=exchange, exchange_reset=exchange_reset,
+                 exchange_type=exchange_type, error_func=error_handler,
+                 auto_ack=auto_ack, name=name, queue_exclusive=queue_exclusive, )
         self.consumer_properties[name]['restart_attempts'] = \
             int(restart_attempts)
         self.consumer_properties[name]['started'] = False
-
-        self.consumers[name] = self._create_consumer_instance_from_properties(
-            properties=self.consumer_properties[name]['properties']
-        )
+        self.consumers[name] = self.consumer_thread_cls(**self.consumer_properties[name]['properties'])
 
     @property
     def consumer_thread_cls(self) -> Type[ConsumerThreadInstance]:
@@ -488,19 +458,7 @@ class MQConnector(ABC):
             return SelectConsumerThread
         return BlockingConsumerThread
 
-    def _create_consumer_instance_from_properties(self, properties: dict) -> ConsumerThreadInstance:
-        return self.consumer_thread_cls(**self.consumer_properties[properties["name"]]['properties'])
-
-    def restart_consumer(self, name: str) -> None:
-        """
-        Restarts consumer by name.
-        Additionally, checks whether mounted consumer has limitation on amount of restarts set,
-        if it does - checks if number of restarts exceeded.
-
-        Otherwise, will increment restarts counter and recreate consumer worker via `run_consumers`
-
-        :param name: name of the consumer to restart
-        """
+    def restart_consumer(self, name: str):
         self.stop_consumers(names=(name,), allow_restart=True)
         consumer_data = self.consumer_properties.get(name, {})
         restart_attempts = consumer_data.get('restart_attempts',
@@ -513,37 +471,29 @@ class MQConnector(ABC):
         elif 0 < restart_attempts < consumer_data.get('num_restarted', 0):
             err_msg = 'num restarts exceeded'
         else:
-            self.consumers[name] = self._create_consumer_instance_from_properties(
-                properties=consumer_data['properties']
-            )
+            self.consumers[name] = self.consumer_thread_cls(**consumer_data['properties'])
             self.run_consumers(names=(name,))
-
             self.consumer_properties[name].setdefault('num_restarted', 0)
             self.consumer_properties[name]['num_restarted'] += 1
-
         if err_msg:
             LOG.error(f'Cannot restart consumer "{name}" - {err_msg}')
 
-    def register_subscriber(self,
-        name: str,
-        vhost: str,
-        callback: callable,
-        on_error: Optional[callable] = None,
-        exchange: str = None,
-        exchange_reset: bool = False,
-        auto_ack: bool = True,
-        skip_on_existing: bool = False,
-        restart_attempts: Optional[int] = None,
-    ):
+    def register_subscriber(self, name: str, vhost: str,
+                            callback: callable,
+                            on_error: Optional[callable] = None,
+                            exchange: str = None, exchange_reset: bool = False,
+                            auto_ack: bool = True,
+                            skip_on_existing: bool = False,
+                            restart_attempts: int = __max_consumer_restarts__):
         """
         Registers fanout exchange subscriber, wraps register_consumer()
         Any raised exceptions will be passed as arguments to on_error.
-
-        :param name: Human-readable name of the consumer
+        :param name: Human readable name of the consumer
         :param vhost: vhost to register on
         :param exchange: MQ Exchange to bind to
-        :param exchange_reset: delete exchange if exists (defaults to False)
-        :param callback: Callback handler for received messages
+        :param exchange_reset: to delete exchange if exists
+            (defaults to False)
+        :param callback: Method to passed queued messages to
         :param on_error: Optional method to handle any exceptions raised
             in message handling
         :param auto_ack: Boolean to enable ack of messages upon receipt
@@ -553,8 +503,10 @@ class MQConnector(ABC):
             (if < 0 - will restart infinitely times)
         """
         # for fanout exchange queue does not matter unless its non-conflicting
-        # and is bound
+        # and is binded
         subscriber_queue = f'subscriber_{exchange}_{uuid.uuid4().hex[:6]}'
+        LOG.info(f'Subscriber queue registered: {subscriber_queue} '
+                 f'[subscriber_name={name},exchange={exchange},vhost={vhost}]')
         return self.register_consumer(name=name, vhost=vhost,
                                       queue=subscriber_queue,
                                       callback=callback, queue_reset=False,
@@ -563,87 +515,48 @@ class MQConnector(ABC):
                                       exchange_reset=exchange_reset,
                                       auto_ack=auto_ack, queue_exclusive=True,
                                       skip_on_existing=skip_on_existing,
-                                      restart_attempts=restart_attempts,)
+                                      restart_attempts=restart_attempts)
 
     @staticmethod
     def default_error_handler(thread: ConsumerThreadInstance, exception: Exception):
         LOG.error(f"{exception} occurred in {thread}")
 
-    def run_consumers(
-        self,
-        names: Optional[tuple] = None,
-        daemon=True
-    ) -> None:
+    def run_consumers(self, names: tuple = (), daemon=True):
         """
         Runs consumer threads based on the name if present
-        (starts all the declared consumers by default)
+        (starts all of the declared consumers by default)
 
         :param names: names of consumers to consider
-        :param daemon: flag to kill consumer threads once main thread is over
+        :param daemon: to kill consumer threads once main thread is over
         """
-
-        if not names:
+        if not names or len(names) == 0:
             names = list(self.consumers)
         for name in names:
-            consumer = self.consumers.get(name)
-            if isinstance(consumer, SUPPORTED_THREADED_CONSUMERS) and consumer.is_consumer_alive:
-                consumer.daemon = daemon
-                consumer.start()
+            if isinstance(self.consumers.get(name), SUPPORTED_THREADED_CONSUMERS) and self.consumers[name].is_consumer_alive:
+                self.consumers[name].daemon = daemon
+                self.consumers[name].start()
                 self.consumer_properties[name]['started'] = True
 
-    def stop_consumers(self,
-                       names: Optional[tuple] = None,
-                       allow_restart: bool = True) -> None:
+    def stop_consumers(self, names: tuple = (), allow_restart: bool = True):
         """
-        Stops consumer threads based on the name if present
-        (stops all the declared consumers by default)
-
-        :param names: tuple of names of consumers to stop. If empty, will stop all consumers
-        :param allow_restart: to allow further restart of stopped consumers
-
-        :raise ChildProcessError if exception occurred during consumer restart
+            Stops consumer threads based on the name if present
+            (stops all of the declared consumers by default)
         """
-        if not names:
+        if not names or len(names) == 0:
             names = list(self.consumers)
         for name in names:
             try:
-                if name in list(self.consumers):
-                    self.stop_consumer_thread(name=name, allow_restart=allow_restart)
-                    self._mark_consumer_as_stopped(name=name)
+                if isinstance(self.consumers.get(name), SUPPORTED_THREADED_CONSUMERS):
+                    self.consumers[name].join(timeout=self.__consumer_join_timeout__, allow_restart=allow_restart)
+                    self.consumer_properties[name]['is_alive'] = self.consumers[name].is_consumer_alive
+                    self.consumer_properties[name]['started'] = False
             except Exception as e:
                 raise ChildProcessError(e)
 
-    def stop_consumer_thread(self, name: str, allow_restart: bool = True) -> None:
-        """
-        Gracefully stops consumer threads based on the name
-
-        :param name: name of consumer to stop
-        :param allow_restart: to allow further restart of stopped consumer
-        """
-        if isinstance(self.consumers[name], SUPPORTED_THREADED_CONSUMERS) and self.consumers[name].is_alive():
-            self.consumers[name].join(timeout=self.__consumer_join_timeout__, allow_restart=allow_restart)
-
-    def _mark_consumer_as_stopped(self, name: str) -> None:
-        """
-        Marks consumer as stopped by name
-        :param name: name of consumer
-        """
-        self.consumer_properties[name]['is_alive'] = False
-        self.consumer_properties[name]['started'] = False
-        self.consumers[name] = None
-
-    @retry(
-        callback_on_exceeded='stop_sync_thread',
-        use_self=True,
-        num_retries=__run_retries__,
-    )
-    def sync(
-        self,
-        vhost: str = None,
-        exchange: str = None,
-        queue: str = None,
-        request_data: dict = None
-    ):
+    @retry(callback_on_exceeded='stop_sync_thread', use_self=True,
+           num_retries=__run_retries__)
+    def sync(self, vhost: str = None, exchange: str = None, queue: str = None,
+             request_data: dict = None):
         """
         Periodic notification message to be sent into MQ,
         used to notify other network listeners about this service health status
@@ -665,18 +578,10 @@ class MQConnector(ABC):
             self.publish_message(mq_connection, exchange=exchange,
                                  request_data=request_data)
 
-    @retry(
-        callback_on_exceeded='stop',
-        use_self=True,
-        num_retries=__run_retries__,
-    )
-    def run(
-        self,
-        run_consumers: bool = True,
-        run_sync: bool = True,
-        run_observer: bool = True,
-        **kwargs,
-    ) -> None:
+    @retry(callback_on_exceeded='stop', use_self=True,
+           num_retries=__run_retries__)
+    def run(self, run_consumers: bool = True, run_sync: bool = True,
+            run_observer: bool = True, **kwargs):
         """
         Generic method called on running the instance
 
@@ -720,13 +625,13 @@ class MQConnector(ABC):
         Iteratively observes each consumer, and if it was launched but is not
         alive - restarts it
         """
-        # LOG.debug('Observing consumers')
+        # LOG.debug('Observers state observation')
         consumers_dict = copy.copy(self.consumers)
         for consumer_name, consumer_instance in consumers_dict.items():
-            if (self.consumer_properties[consumer_name]['started']
-                    and (isinstance(consumer_instance, threading.Thread)
-                    and not consumer_instance.is_alive())
-            ):
+            if self.consumer_properties[consumer_name]['started'] and \
+                    not (isinstance(consumer_instance, SUPPORTED_THREADED_CONSUMERS)
+                         and consumer_instance.is_alive()
+                         and consumer_instance.is_consuming):
                 LOG.info(f'Consumer "{consumer_name}" is dead, restarting')
                 self.restart_consumer(name=consumer_name)
 

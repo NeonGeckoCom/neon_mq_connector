@@ -14,8 +14,7 @@ class BlockingConsumerThread(threading.Thread):
     """
 
     # retry to handle connection failures in case MQ server is still starting
-    def __init__(self,
-                 connection_params: pika.ConnectionParameters,
+    def __init__(self, connection_params: pika.ConnectionParameters,
                  queue: str, callback_func: callable,
                  error_func: callable = consumer_utils.default_error_handler,
                  auto_ack: bool = True,
@@ -23,8 +22,7 @@ class BlockingConsumerThread(threading.Thread):
                  queue_exclusive: bool = False,
                  exchange: Optional[str] = None,
                  exchange_reset: bool = False,
-                 exchange_type: str = ExchangeType.direct,
-                 *args, **kwargs):
+                 exchange_type: str = ExchangeType.direct, *args, **kwargs):
         """
         Rabbit MQ Consumer class that aims at providing unified configurable
         interface for consumer threads
@@ -87,20 +85,26 @@ class BlockingConsumerThread(threading.Thread):
                 self._is_consuming = True
                 self.channel.start_consuming()
             except Exception as e:
-                self.error_func(self, e)
+                self._is_consuming = False
+                if isinstance(e, pika.exceptions.ChannelClosed):
+                    LOG.info(f"Channel closed by broker: {self.callback_func}")
+                elif isinstance(e, pika.exceptions.StreamLostError):
+                    LOG.info("Connection closed by broker")
+                else:
+                    self.error_func(self, e)
                 self.join(allow_restart=True)
 
     def join(self, timeout: Optional[float] = ..., allow_restart: bool = True) -> None:
         """Terminating consumer channel"""
-        if self.is_consumer_alive and self.is_consuming:
-            self._is_consuming = False
+        if self._is_consumer_alive:
             try:
                 self.channel.stop_consuming()
                 if self.connection.is_open:
                     self.connection.close()
             except Exception as e:
-                LOG.error(f"Failed to stop consumer thread: {e}")
+                LOG.error(e)
             finally:
+                self._is_consuming = False
                 if not allow_restart:
                     self._is_consumer_alive = False
                 super(BlockingConsumerThread, self).join(timeout=timeout)

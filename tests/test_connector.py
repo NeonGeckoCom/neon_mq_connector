@@ -183,7 +183,7 @@ class MQConnectorChildTest(unittest.TestCase):
                                                     auto_ack=False,)
 
         self.connector_instance.run_consumers(names=test_consumers)
-        time.sleep(1)
+        time.sleep(0.5)
 
         self.connector_instance.send_message(exchange='test',
                                              exchange_type=ExchangeType.fanout,
@@ -208,6 +208,7 @@ class MQConnectorChildTest(unittest.TestCase):
             restart_attempts=0
         )
         self.connector_instance.run_consumers(names=("error",))
+        time.sleep(0.5)
 
         self.connector_instance.send_message(queue='error',
                                              request_data={'data': 'test'},
@@ -250,6 +251,7 @@ class MQConnectorChildTest(unittest.TestCase):
             auto_ack=False,
         )
         self.connector_instance.run_consumers(names=('test3',))
+        time.sleep(0.5)
 
         self.connector_instance.send_message(queue='test_failing_once_queue',
                                              request_data={'data': 'knock'},
