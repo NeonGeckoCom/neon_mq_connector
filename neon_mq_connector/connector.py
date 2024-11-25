@@ -546,7 +546,7 @@ class MQConnector(ABC):
             names = list(self.consumers)
         for name in names:
             try:
-                if isinstance(self.consumers.get(name), SUPPORTED_THREADED_CONSUMERS):
+                if isinstance(self.consumers.get(name), SUPPORTED_THREADED_CONSUMERS) and self.consumers[name].is_alive():
                     self.consumers[name].join(timeout=self.__consumer_join_timeout__, allow_restart=allow_restart)
                     self.consumer_properties[name]['is_alive'] = self.consumers[name].is_consumer_alive
                     self.consumer_properties[name]['started'] = False
