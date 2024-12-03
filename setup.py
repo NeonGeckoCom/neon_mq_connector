@@ -78,8 +78,5 @@ setup(
         'Intended Audience :: Developers',
         'Programming Language :: Python :: 3.8',
     ],
-    extras_require={
-        "aio": get_requirements("aio_requirements.txt"),
-    },
     python_requires = '>=3.8',
 )

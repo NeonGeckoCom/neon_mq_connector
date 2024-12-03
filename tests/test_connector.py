@@ -27,16 +27,17 @@
 # SOFTWARE,  EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 import os
 import threading
+import time
 import unittest
 import pika
 import pytest
 
 from unittest.mock import Mock
 from ovos_utils.log import LOG
-from parameterized import parameterized
+from pika.exchange_type import ExchangeType
 
 from neon_mq_connector.config import Configuration
-from neon_mq_connector.connector import MQConnector, ConsumerThread
+from neon_mq_connector.connector import MQConnector, ConsumerThreadInstance
 from neon_mq_connector.utils import RepeatingTimer
 from neon_mq_connector.utils.rabbit_utils import create_mq_callback
 
@@ -53,11 +54,7 @@ class MQConnectorChild(MQConnector):
         self._consume_event = None
         self._consumer_restarted_event = None
         self._vhost = "/neon_testing"
-        self.observe_period = 10
-        self.register_consumer(name="error", vhost=self.vhost, queue="error",
-                               callback=self.callback_func_error,
-                               on_error=self.handle_error, auto_ack=False,
-                               restart_attempts=0)
+        self.observe_period = 5
 
     @create_mq_callback(include_callback_props=('channel', 'method',))
     def callback_func_1(self, channel, method):
@@ -91,7 +88,7 @@ class MQConnectorChild(MQConnector):
     def callback_func_error(self, channel, method, properties, body):
         raise Exception("Exception to Handle")
 
-    def handle_error(self, thread: ConsumerThread, exception: Exception):
+    def handle_error(self, thread: ConsumerThreadInstance, exception: Exception):
         self.exception = exception
         self.consume_event.set()
 
@@ -132,38 +129,27 @@ class MQConnectorChildTest(unittest.TestCase):
     def test_not_null_service_id(self):
         self.assertIsNotNone(self.connector_instance.service_id)
 
-    @parameterized.expand(
-        input=[
-            (
-                "async_mode_enabled",  # test name
-                True,  # async consumer flag
-            ),
-            (
-                "async_mode_disabled",
-                False,
-            )
-        ]
-    )
+    def tearDown(self):
+        self.connector_instance.stop_consumers(allow_restart=False)
+
     @pytest.mark.timeout(30)
-    async def test_mq_messaging(self, test_name: str, async_consumer_flag: bool):
+    def test_mq_messaging(self):
         self.connector_instance.func_1_ok = False
         self.connector_instance.func_2_ok = False
         test_consumers = ('test1', 'test2',)
 
-        self.connector_instance.stop_consumers(names=test_consumers)
-
-        self.connector_instance.register_consumer(name="test1", vhost=self.connector_instance.vhost,
+        self.connector_instance.register_consumer(name="test1",
+                                                  vhost=self.connector_instance.vhost,
                                                   exchange='',
                                                   queue='test',
                                                   callback=self.connector_instance.callback_func_1,
-                                                  auto_ack=False,
-                                                  async_consumer=async_consumer_flag,)
-        self.connector_instance.register_consumer(name="test2", vhost=self.connector_instance.vhost,
+                                                  auto_ack=False,)
+        self.connector_instance.register_consumer(name="test2",
+                                                  vhost=self.connector_instance.vhost,
                                                   exchange='',
                                                   queue='test1',
                                                   callback=self.connector_instance.callback_func_2,
-                                                  auto_ack=False,
-                                                  async_consumer=async_consumer_flag,)
+                                                  auto_ack=False,)
 
         self.connector_instance.run_consumers(names=test_consumers)
 
@@ -179,42 +165,28 @@ class MQConnectorChildTest(unittest.TestCase):
         self.assertTrue(self.connector_instance.func_1_ok)
         self.assertTrue(self.connector_instance.func_2_ok)
 
-    @parameterized.expand(
-        input=[
-            (
-                "async_mode_enabled",  # test name
-                True,  # async consumer flag
-            ),
-            (
-                "async_mode_disabled",
-                False,
-            )
-        ]
-    )
     @pytest.mark.timeout(30)
-    async def test_publish_subscribe(self, test_name: str, async_consumer_flag: bool):
+    def test_publish_subscribe(self):
         self.connector_instance.func_1_ok = False
         self.connector_instance.func_2_ok = False
         test_consumers = ('test1', 'test2',)
 
-        self.connector_instance.stop_consumers(names=test_consumers)
-
         self.connector_instance.register_subscriber(name="test1",
                                                     vhost=self.connector_instance.vhost,
                                                     exchange='test',
+                                                    # exchange_reset=True,
                                                     callback=self.connector_instance.callback_func_1,
-                                                    auto_ack=False,
-                                                    async_consumer=async_consumer_flag)
+                                                    auto_ack=False,)
         self.connector_instance.register_subscriber(name="test2", vhost=self.connector_instance.vhost,
                                                     exchange='test',
                                                     callback=self.connector_instance.callback_func_2,
-                                                    auto_ack=False,
-                                                    async_consumer=async_consumer_flag)
+                                                    auto_ack=False,)
 
         self.connector_instance.run_consumers(names=test_consumers)
+        time.sleep(0.5)
 
         self.connector_instance.send_message(exchange='test',
-                                             exchange_type='fanout',
+                                             exchange_type=ExchangeType.fanout,
                                              request_data={'data': 'Hello!'},
                                              expiration=4000)
 
@@ -224,28 +196,31 @@ class MQConnectorChildTest(unittest.TestCase):
         self.assertTrue(self.connector_instance.func_2_ok)
 
     @pytest.mark.timeout(30)
-    def test_error(self):
+    def test_error(self,):
+        self.connector_instance.register_consumer(
+            name="error",
+            vhost=self.connector_instance.vhost,
+            queue="error",
+            queue_reset=True,
+            callback=self.connector_instance.callback_func_error,
+            on_error=self.connector_instance.handle_error,
+            auto_ack=False,
+            restart_attempts=0
+        )
+        self.connector_instance.run_consumers(names=("error",))
+        time.sleep(0.5)
+
         self.connector_instance.send_message(queue='error',
                                              request_data={'data': 'test'},
                                              expiration=4000)
-        self.connector_instance.consume_event.wait(5)
+
+        self.connector_instance.consume_event.wait(10)
+
         self.assertIsInstance(self.connector_instance.exception, Exception)
         self.assertEqual(str(self.connector_instance.exception), "Exception to Handle")
 
-    @parameterized.expand(
-        input=[
-            (
-                "async_mode_enabled",  # test name
-                True,  # async consumer flag
-            ),
-            (
-                "async_mode_disabled",
-                False,
-            )
-        ]
-    )
     @pytest.mark.timeout(30)
-    async def test_consumer_after_message(self, test_name: str, async_consumer_flag: bool):
+    def test_consumer_after_message(self,):
 
         self.connector_instance.send_message(queue='test3',
                                              request_data={'data': 'test'},
@@ -255,40 +230,28 @@ class MQConnectorChildTest(unittest.TestCase):
                                                   vhost=self.connector_instance.vhost,
                                                   queue="test3",
                                                   callback=self.connector_instance.callback_func_after_message,
-                                                  auto_ack=False,
-                                                  async_consumer=async_consumer_flag)
+                                                  auto_ack=False,)
 
         self.connector_instance.run_consumers(names=("test_consumer_after_message",))
 
-        self.connector_instance.consume_event.wait(5)
+        self.connector_instance.consume_event.wait(10)
 
         self.assertTrue(self.connector_instance.callback_ok)
 
-    @parameterized.expand(
-        input=[
-            (
-                "async_mode_enabled",  # test name
-                True,  # async consumer flag
-            ),
-            (
-                "async_mode_disabled",
-                False,
-            )
-        ]
-    )
     @pytest.mark.timeout(30)
-    async def test_consumer_restarted(self, test_name: str, async_consumer_flag: bool):
+    def test_consumer_restarted(self,):
         self.connector_instance.register_consumer(
             name="test3",
             vhost=self.connector_instance.vhost,
             exchange='',
             queue='test_failing_once_queue',
+            queue_reset=True,
             callback=self.connector_instance.callback_func_3,
             restart_attempts=1,
             auto_ack=False,
-            async_consumer=async_consumer_flag,
         )
         self.connector_instance.run_consumers(names=('test3',))
+        time.sleep(0.5)
 
         self.connector_instance.send_message(queue='test_failing_once_queue',
                                              request_data={'data': 'knock'},
@@ -317,6 +280,14 @@ class MQConnectorChildTest(unittest.TestCase):
         mock_method.assert_called_once()
 
         self.connector_instance.publish_message = real_method
+
+
+class MQConnectorChildAsyncModeTest(MQConnectorChildTest):
+
+    @classmethod
+    def setUpClass(cls):
+        super(MQConnectorChildAsyncModeTest, cls).setUpClass()
+        cls.connector_instance.async_consumers_enabled = True
 
 
 class TestMQConnectorInit(unittest.TestCase):
