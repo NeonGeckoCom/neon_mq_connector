@@ -29,6 +29,8 @@
 import uuid
 
 from threading import Event
+from typing import Callable, Optional
+
 from pika.channel import Channel
 from pika.exceptions import ProbableAccessDeniedError, StreamLostError
 from neon_mq_connector.connector import MQConnector
@@ -60,7 +62,8 @@ class NeonMQHandler(MQConnector):
 
 def send_mq_request(vhost: str, request_data: dict, target_queue: str,
                     response_queue: str = None, timeout: int = 30,
-                    expect_response: bool = True) -> dict:
+                    expect_response: bool = True,
+                    stream_callback: Optional[Callable[[dict], None]] = None) -> dict:
     """
     Sends a request to the MQ server and returns the response.
     :param vhost: vhost to target
@@ -70,6 +73,7 @@ def send_mq_request(vhost: str, request_data: dict, target_queue: str,
         Generally should be blank
     :param timeout: time in seconds to wait for a response before timing out
     :param expect_response: boolean indicating whether a response is expected
+    :param stream_callback: Optional function to pass partial responses to
     :return: response to request
     """
     response_queue = response_queue or uuid.uuid4().hex
@@ -94,22 +98,30 @@ def send_mq_request(vhost: str, request_data: dict, target_queue: str,
         """
         api_output = b64_to_dict(body)
 
-        # The Messagebus connector generates a unique `message_id` for each
-        # response message. Check context for the original one; otherwise,
-        # check in output directly as some APIs emit responses without a unique
-        # message_id
+        # Backwards-compat. handles `context` in response for raw `Message`
+        # objects sent across the MQ bus
         api_output_msg_id = \
             api_output.get('context',
                            api_output).get('mq', api_output).get('message_id')
-        # TODO: One of these specs should be deprecated
         if api_output_msg_id != api_output.get('message_id'):
-            LOG.debug(f"Handling message_id from response context")
+            # TODO: `context.mq` handling should be deprecated
+            LOG.warning(f"Handling message_id from response context")
         if api_output_msg_id == message_id:
             LOG.debug(f'MQ output: {api_output}')
             channel.basic_ack(delivery_tag=method.delivery_tag)
-            channel.close()
-            response_data.update(api_output)
-            response_event.set()
+            if api_output.get('_part'):
+                # Handle multi-part responses
+                if stream_callback:
+                    # Pass each part to the stream callback method if defined
+                    stream_callback(api_output)
+                if api_output.get('_is_final'):
+                    # Always return final result
+                    response_data.update(api_output)
+            else:
+                response_data.update(api_output)
+            if api_output.get('_is_final', True):
+                channel.close()
+                response_event.set()
         else:
             channel.basic_nack(delivery_tag=method.delivery_tag)
             LOG.debug(f"Ignoring {api_output_msg_id} waiting for {message_id}")
