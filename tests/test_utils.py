@@ -30,6 +30,7 @@ import os
 import sys
 import time
 import unittest
+import pytest
 import pika
 
 from threading import Thread
@@ -41,6 +42,9 @@ from neon_mq_connector.utils.connection_utils import get_timeout, retry, \
     wait_for_mq_startup
 from neon_mq_connector.utils.client_utils import MQConnector
 from neon_mq_connector.utils.network_utils import dict_to_b64, b64_to_dict
+
+from .fixtures import rmq_instance
+
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 TEST_PATH = os.path.join(ROOT_DIR, "tests", "ccl_files")
 
@@ -83,7 +87,6 @@ class TestMQConnector(MQConnector):
 
 
 class TestMQConnectorUtils(unittest.TestCase):
-
     counter = 0
 
     def repeating_method(self):
@@ -97,7 +100,7 @@ class TestMQConnectorUtils(unittest.TestCase):
             Simple method that is passing check only after n-th attempt
             :param num_attempts: number of attempts before passing
         """
-        if self.counter < num_attempts-1:
+        if self.counter < num_attempts - 1:
             self.repeating_method()
             raise AssertionError('Awaiting counter equal to 3')
         return True
@@ -144,25 +147,34 @@ class TestMQConnectorUtils(unittest.TestCase):
         self.counter = 0
 
 
+@pytest.mark.usefixtures("rmq_instance")
 class MqUtilTests(unittest.TestCase):
     test_connector = None
 
-    @classmethod
-    def setUpClass(cls) -> None:
-        from neon_mq_connector.utils.client_utils import _default_mq_config
-        vhost = "/neon_testing"
-        cls.test_connector = TestMQConnector(config=_default_mq_config,
-                                             service_name="mq_handler",
-                                             vhost=vhost)
-        cls.test_connector.register_consumer("neon_utils_test", vhost,
-                                             INPUT_CHANNEL,
-                                             cls.test_connector.respond,
-                                             auto_ack=False)
-        cls.test_connector.run_consumers()
+    def setUp(self) -> None:
+        if self.test_connector is None:
+            test_conf = {
+                "server": "localhost",
+                "port": self.rmq_instance.port,
+                "users": {"mq_handler": {"user": "test_user",
+                                         "password": "test_password"}}}
+            import neon_mq_connector.utils.client_utils
+            neon_mq_connector.utils.client_utils._default_mq_config = test_conf
+            vhost = "/neon_testing"
+            self.test_connector = TestMQConnector(config=test_conf,
+                                                  service_name="mq_handler",
+                                                  vhost=vhost)
+            self.test_connector.register_consumer("neon_utils_test",
+                                                  vhost,
+                                                  INPUT_CHANNEL,
+                                                  self.test_connector.respond,
+                                                  auto_ack=False)
+            self.test_connector.run_consumers()
 
     @classmethod
     def tearDownClass(cls) -> None:
-        cls.test_connector.stop_consumers()
+        if cls.test_connector is not None:
+            cls.test_connector.stop_consumers()
 
     def test_send_mq_request_valid(self):
         from neon_mq_connector.utils.client_utils import send_mq_request
