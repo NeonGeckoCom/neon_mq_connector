@@ -130,7 +130,7 @@ class MQConnectorChildTest(unittest.TestCase):
         self.assertIsNotNone(self.connector_instance.service_id)
 
     def tearDown(self):
-        self.connector_instance.stop_consumers(allow_restart=False)
+        self.connector_instance.stop_consumers()
 
     @pytest.mark.timeout(30)
     def test_mq_messaging(self):

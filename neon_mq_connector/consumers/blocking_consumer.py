@@ -114,26 +114,27 @@ class BlockingConsumerThread(threading.Thread):
                 self._is_consuming = True
                 self.channel.start_consuming()
             except Exception as e:
-                self._is_consuming = False
+                self._close_connection()
                 if isinstance(e, pika.exceptions.ChannelClosed):
                     LOG.info(f"Channel closed by broker: {self.callback_func}")
                 elif isinstance(e, pika.exceptions.StreamLostError):
                     LOG.info("Connection closed by broker")
                 else:
                     self.error_func(self, e)
-                self.join(allow_restart=True)
 
-    def join(self, timeout: Optional[float] = ..., allow_restart: bool = True) -> None:
+    def join(self, timeout: Optional[float] = None) -> None:
         """Terminating consumer channel"""
         if self._is_consumer_alive:
-            try:
-                self.channel.stop_consuming()
-                if self.connection.is_open:
-                    self.connection.close()
-            except Exception as e:
-                LOG.error(e)
-            finally:
-                self._is_consuming = False
-                if not allow_restart:
-                    self._is_consumer_alive = False
-                super(BlockingConsumerThread, self).join(timeout=timeout)
+            self._close_connection()
+            super(BlockingConsumerThread, self).join(timeout=timeout)
+
+    def _close_connection(self):
+        try:
+            if self.connection and self.connection.is_open:
+                self.connection.close()
+        except pika.exceptions.StreamLostError:
+            pass
+        except Exception as e:
+            LOG.exception(f"Failed to close connection due to unexpected exception: {e}")
+        self._is_consuming = False
+        self._is_consumer_alive = False

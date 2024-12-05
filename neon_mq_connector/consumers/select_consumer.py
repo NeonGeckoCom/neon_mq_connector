@@ -108,7 +108,7 @@ class SelectConsumerThread(threading.Thread):
         self.connection_failed_attempts += 1
         if self.connection_failed_attempts > self.max_connection_failed_attempts:
             LOG.error(f'Failed establish MQ connection after {self.max_connection_failed_attempts} attempts')
-            self.join(timeout=1)
+            self._close_connection()
         else:
             self.reconnect()
 
@@ -173,7 +173,7 @@ class SelectConsumerThread(threading.Thread):
 
     def on_close(self, _, e):
         LOG.error(f"Closing MQ connection due to exception: {e}")
-        self.join()
+        self.reconnect()
 
     @property
     def is_consumer_alive(self) -> bool:
@@ -192,9 +192,9 @@ class SelectConsumerThread(threading.Thread):
                 self.connection.ioloop.start()
             except Exception as e:
                 LOG.error(f"Failed to start io loop on consumer thread {self.name!r}: {e}")
-                self.join(allow_restart=True)
+                self._close_connection()
 
-    def _close_connection(self):
+    def _close_connection(self, mark_consumer_as_dead: bool = True):
         try:
             if self.connection and not (self.connection.is_closed or self.connection.is_closing):
                 self.connection.ioloop.stop()
@@ -202,17 +202,16 @@ class SelectConsumerThread(threading.Thread):
         except Exception as e:
             LOG.error(f"Failed to close connection for Consumer {self.name!r}: {e}")
         self._is_consuming = False
+        if mark_consumer_as_dead:
+            self._is_consumer_alive = False
 
     def reconnect(self, wait_interval: int = 1):
-        self._close_connection()
+        self._close_connection(mark_consumer_as_dead=False)
         time.sleep(wait_interval)
         self.run()
 
-    def join(self, timeout: Optional[float] = None, allow_restart: bool = True) -> None:
+    def join(self, timeout: Optional[float] = None) -> None:
         """Terminating consumer channel"""
         if self.is_consumer_alive and self.is_consuming:
-            self._is_consuming = False
-            self._close_connection()
-            if not allow_restart:
-                self._is_consumer_alive = False
+            self._close_connection(mark_consumer_as_dead=True)
         super().join(timeout=timeout)
