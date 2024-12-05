@@ -292,12 +292,12 @@ class MQConnectorChildTest(unittest.TestCase):
         self.connector_instance.publish_message = real_method
 
 
+@pytest.mark.usefixtures("rmq_instance")
 class MQConnectorChildAsyncModeTest(MQConnectorChildTest):
 
-    @classmethod
-    def setUpClass(cls):
-        super(MQConnectorChildAsyncModeTest, cls).setUpClass()
-        cls.connector_instance.async_consumers_enabled = True
+    def setUp(self):
+        MQConnectorChildTest.setUp(self)
+        self.connector_instance.async_consumers_enabled = True
 
 
 class TestMQConnectorInit(unittest.TestCase):
