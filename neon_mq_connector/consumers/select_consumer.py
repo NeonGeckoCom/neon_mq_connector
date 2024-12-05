@@ -89,7 +89,7 @@ class SelectConsumerThread(threading.Thread):
         self.queue_reset = queue_reset
         self.exchange_reset = exchange_reset
 
-        self.connection = self.create_connection()
+        self.connection = None
         self.connection_failed_attempts = 0
         self.max_connection_failed_attempts = 3
 
@@ -188,6 +188,7 @@ class SelectConsumerThread(threading.Thread):
         if not self.is_consuming:
             try:
                 super(SelectConsumerThread, self).run()
+                self.connection = self.create_connection()
                 self._is_consuming = True
                 self.connection.ioloop.start()
             except Exception as e:
