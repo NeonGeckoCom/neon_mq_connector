@@ -29,6 +29,7 @@
 
 from ovos_utils.log import LOG
 
+
 def default_error_handler(*args):
     """
     Default handler for Consumer instances
