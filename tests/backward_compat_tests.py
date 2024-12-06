@@ -33,7 +33,6 @@ from parameterized import parameterized
 
 from neon_mq_connector import MQConnector
 from neon_mq_connector.config import Configuration
-from neon_mq_connector.connector import ConsumerThreadInstance
 from neon_mq_connector.consumers import SelectConsumerThread, BlockingConsumerThread
 
 
