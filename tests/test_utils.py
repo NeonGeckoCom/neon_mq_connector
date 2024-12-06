@@ -235,11 +235,13 @@ class TestMQConnectionUtils(unittest.TestCase):
         self.assertEqual(timeout, 0.4)
 
     def test_retry(self):
-        """Testing retry decorator"""
+        # Retry with successful outcome
         outcome = self.method_passing_on_nth_attempt(num_attempts=3)
         self.assertTrue(outcome)
         self.assertEqual(2, self.counter)
 
+        # Retry with failing outcome
+        self.counter = 0
         outcome = self.method_passing_on_nth_attempt(num_attempts=4)
         self.assertFalse(outcome)
         self.assertEqual(3, self.counter)

@@ -26,9 +26,8 @@
 # NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 # SOFTWARE,  EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 import inspect
-from inspect import ismethod
-from functools import wraps
 
+from functools import wraps
 from ovos_utils.log import LOG
 
 from neon_mq_connector.utils.network_utils import b64_to_dict
@@ -36,7 +35,12 @@ from neon_mq_connector.utils.network_utils import b64_to_dict
 
 def create_mq_callback(include_callback_props: tuple = ('body',)):
     """
-    Creates MQ callback method by filtering relevant MQ attributes
+    Creates MQ callback method by filtering relevant MQ attributes. Use this
+    decorator to simplify creation of MQ callbacks.
+
+    Note that the consumer must have `auto_ack=True` specified at registration
+    if the decorated function does not accept `channel` and `method` kwargs that
+    are required to acknowledge a message.
     """
 
     if not include_callback_props:
