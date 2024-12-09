@@ -146,8 +146,6 @@ class BlockingConsumerThread(threading.Thread):
 
     def _close_connection(self):
         try:
-            if self.is_consuming:
-                self.channel.stop_consuming()
             if self.connection and self.connection.is_open:
                 self.connection.close()
         except pika.exceptions.StreamLostError:

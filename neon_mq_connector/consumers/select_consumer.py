@@ -217,7 +217,8 @@ class SelectConsumerThread(threading.Thread):
                 self.connection.close()
                 LOG.info(f"Waiting for channel close")
                 if not self._channel_closed.wait(15):
-                    raise TimeoutError(f"Timeout waiting for channel close. closed={self.channel.is_closed}")
+                    raise TimeoutError(f"Timeout waiting for channel close. "
+                                       f"is_closed={self.channel.is_closed}")
                 LOG.info(f"Channel closed")
             if self.connection:
                 self.connection.ioloop.stop()
@@ -242,6 +243,6 @@ class SelectConsumerThread(threading.Thread):
             self._close_connection(mark_consumer_as_dead=True)
         LOG.info(f"Stopped consumer. Waiting up to {timeout}s for thread to terminate.")
         try:
-            threading.Thread.join(self, timeout=timeout)
+            super().join(timeout=timeout)
         except Exception as e:
             LOG.exception(e)
