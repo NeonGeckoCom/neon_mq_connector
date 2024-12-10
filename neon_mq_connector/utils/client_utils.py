@@ -109,7 +109,7 @@ def send_mq_request(vhost: str, request_data: dict, target_queue: str,
         if api_output_msg_id == message_id:
             LOG.debug(f'MQ output: {api_output}')
             channel.basic_ack(delivery_tag=method.delivery_tag)
-            if api_output.get('_part'):
+            if isinstance(api_output.get('_part'), int):
                 # Handle multi-part responses
                 if stream_callback:
                     # Pass each part to the stream callback method if defined

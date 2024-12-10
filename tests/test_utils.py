@@ -109,6 +109,27 @@ class SimpleMQConnector(MQConnector):
                               properties=pika.BasicProperties(expiration='1000'))
         channel.basic_ack(delivery_tag=method.delivery_tag)
 
+    @staticmethod
+    def respond_multiple(channel, method, _, body):
+        request = b64_to_dict(body)
+        num_parts = request.get("num_parts", 3)
+        base_response = {"message_id": request["message_id"],
+                         "success": True,
+                         "request_data": request["data"]}
+        reply_channel = request.get("routing_key")
+        channel.queue_declare(queue=reply_channel)
+        response_text = ""
+        for i in range(num_parts):
+            response_text += f" {i}"
+            response = {**base_response, **{"response": response_text,
+                                            "_part": i,
+                                            "_is_final": i == num_parts - 1}}
+            channel.basic_publish(exchange='',
+                                  routing_key=reply_channel,
+                                  body=dict_to_b64(response),
+                                  properties=pika.BasicProperties(expiration='1000'))
+        channel.basic_ack(delivery_tag=method.delivery_tag)
+
 
 @pytest.mark.usefixtures("rmq_instance")
 class TestClientUtils(unittest.TestCase):
@@ -131,6 +152,11 @@ class TestClientUtils(unittest.TestCase):
                                                   vhost,
                                                   INPUT_CHANNEL,
                                                   self.test_connector.respond,
+                                                  auto_ack=False)
+            self.test_connector.register_consumer("neon_utils_test_multi",
+                                                  vhost,
+                                                  f"{INPUT_CHANNEL}-multi",
+                                                  self.test_connector.respond_multiple,
                                                   auto_ack=False)
             self.test_connector.run_consumers()
 
@@ -155,6 +181,24 @@ class TestClientUtils(unittest.TestCase):
         self.assertIsInstance(response, dict)
         self.assertTrue(response["success"])
         self.assertEqual(response["request_data"], request["data"])
+
+    def test_multi_part_mq_response(self):
+        from neon_mq_connector.utils.client_utils import send_mq_request
+        request = {"data": time.time(),
+                   "num_parts": 5}
+        target_queue = f"{INPUT_CHANNEL}-multi"
+        stream_callback = Mock()
+        response = send_mq_request("/neon_testing", request, target_queue,
+                                   stream_callback=stream_callback)
+
+        self.assertEqual(stream_callback.call_count, request['num_parts'],
+                         stream_callback.call_args_list)
+
+        self.assertIsInstance(response, dict, response)
+        self.assertTrue(response.get("success"), response)
+        self.assertEqual(response["request_data"], request["data"])
+        self.assertEqual(len(response['response'].split()), request['num_parts'])
+        self.assertTrue(response['_is_final'])
 
     def test_multiple_mq_requests(self):
         from neon_mq_connector.utils.client_utils import send_mq_request
