@@ -200,6 +200,9 @@ class TestClientUtils(unittest.TestCase):
         self.assertEqual(len(response['response'].split()), request['num_parts'])
         self.assertTrue(response['_is_final'])
 
+        # Last callback is the same as the standard response
+        self.assertEqual(response, stream_callback.call_args[0][0])
+
     def test_multiple_mq_requests(self):
         from neon_mq_connector.utils.client_utils import send_mq_request
         responses = dict()

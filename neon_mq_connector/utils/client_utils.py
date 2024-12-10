@@ -71,7 +71,9 @@ def send_mq_request(vhost: str, request_data: dict, target_queue: str,
     :param target_queue: queue to post request to
     :param response_queue: optional queue to monitor for a response.
         Generally should be blank
-    :param timeout: time in seconds to wait for a response before timing out
+    :param timeout: time in seconds to wait for a complete response before
+        timing out. Note that in the event of a timeout, a partial response may
+        have been handled by `stream_callback`.
     :param expect_response: boolean indicating whether a response is expected
     :param stream_callback: Optional function to pass partial responses to
     :return: response to request
