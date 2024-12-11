@@ -44,7 +44,8 @@ class BlockingConsumerThread(threading.Thread):
 
     # retry to handle connection failures in case MQ server is still starting
     def __init__(self, connection_params: pika.ConnectionParameters,
-                 queue: str, callback_func: callable,
+                 queue: str,
+                 callback_func: callable,
                  error_func: callable = consumer_utils.default_error_handler,
                  auto_ack: bool = True,
                  queue_reset: bool = False,
@@ -71,7 +72,8 @@ class BlockingConsumerThread(threading.Thread):
             to learn more about different exchanges
         """
         threading.Thread.__init__(self, *args, **kwargs)
-        self._is_consuming = False  # annotates that ConsumerThread is running
+        self._consumer_started = threading.Event()  # annotates that ConsumerThread is running
+        self._consumer_started.clear()
         self._is_consumer_alive = True  # annotates that ConsumerThread is alive and shall be recreated
 
         self.callback_func = callback_func
@@ -96,15 +98,15 @@ class BlockingConsumerThread(threading.Thread):
 
     @property
     def is_consuming(self) -> bool:
-        return self._is_consuming
+        return self._consumer_started.is_set()
 
     def run(self):
         """Creating consumer channel"""
-        if not self._is_consuming:
+        if not self.is_consuming:
             try:
                 super(BlockingConsumerThread, self).run()
                 self._create_connection()
-                self._is_consuming = True
+                self._consumer_started.set()
                 self.channel.start_consuming()
             except Exception as e:
                 self._close_connection()
@@ -150,5 +152,5 @@ class BlockingConsumerThread(threading.Thread):
             pass
         except Exception as e:
             LOG.exception(f"Failed to close connection due to unexpected exception: {e}")
-        self._is_consuming = False
+        self._consumer_started.clear()
         self._is_consumer_alive = False

@@ -1,6 +1,6 @@
 # NEON AI (TM) SOFTWARE, Software Development Kit & Application Framework
 # All trademark and other rights reserved by their respective owners
-# Copyright 2008-2022 Neongecko.com Inc.
+# Copyright 2008-2024 Neongecko.com Inc.
 # Contributors: Daniel McKnight, Guy Daniels, Elon Gasper, Richard Leeds,
 # Regina Bloomstine, Casimiro Ferreira, Andrii Pernatii, Kirill Hrymailo
 # BSD-3 License
@@ -25,7 +25,7 @@
 # LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
 # NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 # SOFTWARE,  EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-import os
+
 import threading
 import time
 import unittest
@@ -36,10 +36,11 @@ from unittest.mock import Mock
 from ovos_utils.log import LOG
 from pika.exchange_type import ExchangeType
 
-from neon_mq_connector.config import Configuration
 from neon_mq_connector.connector import MQConnector, ConsumerThreadInstance
 from neon_mq_connector.utils import RepeatingTimer
 from neon_mq_connector.utils.rabbit_utils import create_mq_callback
+
+from .fixtures import rmq_instance
 
 
 class MQConnectorChild(MQConnector):
@@ -110,19 +111,28 @@ class MQConnectorChild(MQConnector):
             self.consumer_restarted_event.set()
 
 
+@pytest.mark.usefixtures("rmq_instance")
 class MQConnectorChildTest(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls) -> None:
-        file_path = os.path.join(os.path.dirname(__file__), "test_config.json")
-        cls.connector_instance = MQConnectorChild(
-            config=Configuration(file_path=file_path).config_data,
-            service_name='test')
-        cls.connector_instance.run(run_sync=False)
+    connector_instance = None
+
+    def setUp(self):
+        if self.connector_instance is None:
+            self.connector_instance = MQConnectorChild(
+                config={"server": "127.0.0.1",
+                        "port": self.rmq_instance.port,
+                        "users": {
+                            "test": {
+                                "user": "test_user",
+                                "password": "test_password"
+                            }}},
+                service_name='test')
+            self.connector_instance.run(run_sync=False)
 
     @classmethod
     def tearDownClass(cls) -> None:
         try:
-            cls.connector_instance.stop()
+            if cls.connector_instance is not None:
+                cls.connector_instance.stop()
         except ChildProcessError as e:
             LOG.error(e)
 
@@ -143,13 +153,13 @@ class MQConnectorChildTest(unittest.TestCase):
                                                   exchange='',
                                                   queue='test',
                                                   callback=self.connector_instance.callback_func_1,
-                                                  auto_ack=False,)
+                                                  auto_ack=False, )
         self.connector_instance.register_consumer(name="test2",
                                                   vhost=self.connector_instance.vhost,
                                                   exchange='',
                                                   queue='test1',
                                                   callback=self.connector_instance.callback_func_2,
-                                                  auto_ack=False,)
+                                                  auto_ack=False, )
 
         self.connector_instance.run_consumers(names=test_consumers)
 
@@ -176,11 +186,11 @@ class MQConnectorChildTest(unittest.TestCase):
                                                     exchange='test',
                                                     # exchange_reset=True,
                                                     callback=self.connector_instance.callback_func_1,
-                                                    auto_ack=False,)
+                                                    auto_ack=False, )
         self.connector_instance.register_subscriber(name="test2", vhost=self.connector_instance.vhost,
                                                     exchange='test',
                                                     callback=self.connector_instance.callback_func_2,
-                                                    auto_ack=False,)
+                                                    auto_ack=False, )
 
         self.connector_instance.run_consumers(names=test_consumers)
         time.sleep(0.5)
@@ -196,7 +206,7 @@ class MQConnectorChildTest(unittest.TestCase):
         self.assertTrue(self.connector_instance.func_2_ok)
 
     @pytest.mark.timeout(30)
-    def test_error(self,):
+    def test_error(self, ):
         self.connector_instance.register_consumer(
             name="error",
             vhost=self.connector_instance.vhost,
@@ -220,7 +230,7 @@ class MQConnectorChildTest(unittest.TestCase):
         self.assertEqual(str(self.connector_instance.exception), "Exception to Handle")
 
     @pytest.mark.timeout(30)
-    def test_consumer_after_message(self,):
+    def test_consumer_after_message(self, ):
 
         self.connector_instance.send_message(queue='test3',
                                              request_data={'data': 'test'},
@@ -230,7 +240,7 @@ class MQConnectorChildTest(unittest.TestCase):
                                                   vhost=self.connector_instance.vhost,
                                                   queue="test3",
                                                   callback=self.connector_instance.callback_func_after_message,
-                                                  auto_ack=False,)
+                                                  auto_ack=False, )
 
         self.connector_instance.run_consumers(names=("test_consumer_after_message",))
 
@@ -239,7 +249,7 @@ class MQConnectorChildTest(unittest.TestCase):
         self.assertTrue(self.connector_instance.callback_ok)
 
     @pytest.mark.timeout(30)
-    def test_consumer_restarted(self,):
+    def test_consumer_restarted(self, ):
         self.connector_instance.register_consumer(
             name="test3",
             vhost=self.connector_instance.vhost,
@@ -282,12 +292,12 @@ class MQConnectorChildTest(unittest.TestCase):
         self.connector_instance.publish_message = real_method
 
 
+@pytest.mark.usefixtures("rmq_instance")
 class MQConnectorChildAsyncModeTest(MQConnectorChildTest):
 
-    @classmethod
-    def setUpClass(cls):
-        super(MQConnectorChildAsyncModeTest, cls).setUpClass()
-        cls.connector_instance.async_consumers_enabled = True
+    def setUp(self):
+        MQConnectorChildTest.setUp(self)
+        self.connector_instance.async_consumers_enabled = True
 
 
 class TestMQConnectorInit(unittest.TestCase):

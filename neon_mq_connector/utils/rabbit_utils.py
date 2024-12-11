@@ -25,26 +25,30 @@
 # LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
 # NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 # SOFTWARE,  EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+import inspect
 
 from functools import wraps
-
 from ovos_utils.log import LOG
 
 from neon_mq_connector.utils.network_utils import b64_to_dict
 
 
 def create_mq_callback(include_callback_props: tuple = ('body',)):
-    """ Creates MQ callback method by filtering relevant MQ attributes """
+    """
+    Creates MQ callback method by filtering relevant MQ attributes. Use this
+    decorator to simplify creation of MQ callbacks.
+
+    Note that the consumer must have `auto_ack=True` specified at registration
+    if the decorated function does not accept `channel` and `method` kwargs that
+    are required to acknowledge a message.
+    """
 
     if not include_callback_props:
         include_callback_props = ()
 
     def wrapper(f):
-
-        @wraps(f)
-        def wrapped(self, *f_args):
+        def _parse_kwargs(*f_args) -> dict:
             mq_props = ['channel', 'method', 'properties', 'body']
-
             callback_kwargs = {}
 
             for idx in range(len(mq_props)):
@@ -54,19 +58,39 @@ def create_mq_callback(include_callback_props: tuple = ('body',)):
                         if value and isinstance(value, bytes):
                             dict_data = b64_to_dict(value)
                             callback_kwargs['body'] = dict_data
+                        elif value and isinstance(value, dict):
+                            callback_kwargs['body'] = value
                         else:
                             raise TypeError(f'Invalid body received, expected: '
                                             f'bytes string; got: {type(value)}')
                     else:
                         callback_kwargs[mq_props[idx]] = value
+            return callback_kwargs
+
+        @wraps(f)
+        def wrapped_classmethod(self, *f_args):
             try:
-                res = f(self, **callback_kwargs)
+                res = f(self, **_parse_kwargs(*f_args))
             except Exception as ex:
                 LOG.error(f'Execution of {f.__name__} failed due to '
                           f'exception={ex}')
                 res = None
             return res
 
+        @wraps(f)
+        def wrapped(*f_args):
+            try:
+                res = f(**_parse_kwargs(*f_args))
+            except Exception as ex:
+                LOG.error(f'Execution of {f.__name__} failed due to '
+                          f'exception={ex}')
+                res = None
+            return res
+
+        # Use the appropriate wrapper for a class method vs a function
+        signature = inspect.signature(f).parameters
+        if 'self' in signature:
+            return wrapped_classmethod
         return wrapped
 
     return wrapper
