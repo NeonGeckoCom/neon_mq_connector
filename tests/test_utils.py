@@ -128,6 +128,7 @@ class SimpleMQConnector(MQConnector):
                                   routing_key=reply_channel,
                                   body=dict_to_b64(response),
                                   properties=pika.BasicProperties(expiration='1000'))
+            time.sleep(0.5)  # Used to ensure synchronous response handling
         channel.basic_ack(delivery_tag=method.delivery_tag)
 
 

@@ -112,6 +112,7 @@ def send_mq_request(vhost: str, request_data: dict, target_queue: str,
             LOG.debug(f'MQ output: {api_output}')
             channel.basic_ack(delivery_tag=method.delivery_tag)
             if isinstance(api_output.get('_part'), int):
+                # TODO: Consider forcing these to be passed to `stream_callback` synchronously
                 # Handle multi-part responses
                 if stream_callback:
                     # Pass each part to the stream callback method if defined
