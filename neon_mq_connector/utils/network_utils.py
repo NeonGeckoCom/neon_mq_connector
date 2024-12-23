@@ -27,8 +27,9 @@
 # SOFTWARE,  EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 import json
-import base64
 import socket
+
+from pybase64 import b64encode, b64decode
 
 """
 These utils are duplicated from neon_utils.socket_utils to avoid a circular
@@ -44,7 +45,7 @@ def b64_to_dict(data: bytes, charset: str = "utf-8") -> dict:
 
         @return decoded dictionary
     """
-    return eval(json.loads(base64.b64decode(data).decode(charset)))
+    return eval(json.loads(b64decode(data).decode(charset)))
 
 
 def dict_to_b64(data: dict, charset: str = "utf-8") -> bytes:
@@ -55,7 +56,7 @@ def dict_to_b64(data: dict, charset: str = "utf-8") -> bytes:
 
         @return base64 encoded string
     """
-    return base64.b64encode(json.dumps(str(data)).encode(charset))
+    return b64encode(json.dumps(str(data)).encode(charset))
 
 
 def check_port_is_open(addr: str, port: int) -> bool:
