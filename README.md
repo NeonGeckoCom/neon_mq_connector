@@ -73,6 +73,7 @@ A callback function may choose to publish multiple response messages so the clie
 may receive partial responses as they are being generated. If multiple responses
 will be returned, the following requirements must be met:
 - Each response must be a dict with `_part` and `_is_final` keys.
+- `_part` is defined as a non-negative integer (the first response will specify `0`).
 - The final response must specify `_is_final=True`
 - The final response *MUST NOT* require the client to handle partial responses
 
@@ -85,8 +86,9 @@ A caller may optionally include a `stream_callback` argument which may receive
 partial responses if supported by the service generating the response. The
 `stream_callback` will always be called with the final result that is returned
 by `send_mq_request`. Keep in mind that the `timeout` param passed to 
-`send_mq_request` applies to the full response, so it may be desirable to increase
-the timeout if 
+`send_mq_request` applies to the full response, so the `timeout` value should
+reflect the longest time it will take for a final response to be generated, plus
+some margin.
 
 ### [BETA] Asynchronous Consumers
 
