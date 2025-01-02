@@ -207,8 +207,8 @@ class SelectConsumerThread(threading.Thread):
                 self.connection: pika.SelectConnection = self.create_connection()
                 self.connection.ioloop.start()
             except Exception as e:
-                LOG.error(f"Failed to start io loop on consumer thread {self.name!r}: {e}")
-                self._close_connection()
+                LOG.error(f"Failed to start io loop on consumer thread {self.name!r}: {e}, reconnecting")
+                self.reconnect()
 
     def _close_connection(self, mark_consumer_as_dead: bool = True):
         try:
