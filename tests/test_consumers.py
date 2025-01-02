@@ -140,7 +140,9 @@ class TestSelectConsumer(TestCase):
         self.assertTrue(test_thread.is_consuming)
         self.assertTrue(test_thread.channel.is_open)
 
-        test_thread.join(30)
+        test_thread.join()
+        while not test_thread.is_alive():
+            sleep(0.1)
         self.assertFalse(test_thread.is_consuming)
         self.assertTrue(test_thread.channel.is_closed or
                         test_thread.channel.is_closing)
