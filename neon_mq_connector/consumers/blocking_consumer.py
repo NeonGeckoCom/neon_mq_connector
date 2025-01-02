@@ -108,14 +108,19 @@ class BlockingConsumerThread(threading.Thread):
                 self._create_connection()
                 self._consumer_started.set()
                 self.channel.start_consuming()
-            except Exception as e:
-                self._close_connection()
-                if isinstance(e, pika.exceptions.ChannelClosed):
-                    LOG.info(f"Channel closed by broker: {self.callback_func}")
-                elif isinstance(e, pika.exceptions.StreamLostError):
-                    LOG.info("Connection closed by broker")
-                else:
+            except (pika.exceptions.ChannelClosed,
+                    pika.exceptions.ConnectionClosed) as e:
+                LOG.info(f"Closed {e.reply_code}: {e.reply_text}")
+                if self._is_consumer_alive:
+                    self._close_connection()
                     self.error_func(self, e)
+            except pika.exceptions.StreamLostError as e:
+                if self._is_consumer_alive:
+                    self.error_func(self, e)
+            except Exception as e:
+                if self._is_consumer_alive:
+                    self._close_connection()
+                self.error_func(self, e)
 
     def _create_connection(self):
         self.connection = pika.BlockingConnection(self.connection_params)
@@ -145,6 +150,7 @@ class BlockingConsumerThread(threading.Thread):
             super(BlockingConsumerThread, self).join(timeout=timeout)
 
     def _close_connection(self):
+        self._is_consumer_alive = False
         try:
             if self.connection and self.connection.is_open:
                 self.connection.close()
@@ -153,4 +159,3 @@ class BlockingConsumerThread(threading.Thread):
         except Exception as e:
             LOG.exception(f"Failed to close connection due to unexpected exception: {e}")
         self._consumer_started.clear()
-        self._is_consumer_alive = False

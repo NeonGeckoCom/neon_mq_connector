@@ -81,6 +81,7 @@ class TestBlockingConsumer(TestCase):
         self.assertFalse(test_thread.is_consuming)
         self.assertTrue(test_thread.channel.is_closed)
         self.assertFalse(test_thread.is_consumer_alive)
+        test_thread.error_func.assert_not_called()
 
         # Invalid thread connection
         connection_params.port = 80
@@ -90,6 +91,7 @@ class TestBlockingConsumer(TestCase):
         test_thread._consumer_started.wait(5)
         self.assertFalse(test_thread.is_consuming)
         self.assertIsNone(test_thread.channel)
+        test_thread.error_func.assert_called_once()
 
         test_thread.join(30)
         self.assertFalse(test_thread.is_consuming)
@@ -147,6 +149,7 @@ class TestSelectConsumer(TestCase):
         self.assertFalse(test_thread.is_consumer_alive)
         self.assertTrue(test_thread.channel.is_closed)
         test_thread.on_close.assert_called_once()
+        error.assert_not_called()
 
         # Invalid thread connection
         connection_params.port = 80
