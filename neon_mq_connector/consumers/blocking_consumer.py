@@ -114,6 +114,9 @@ class BlockingConsumerThread(threading.Thread):
                 if self._is_consumer_alive:
                     self._close_connection()
                     self.error_func(self, e)
+            except pika.exceptions.StreamLostError as e:
+                if self._is_consumer_alive:
+                    self.error_func(self, e)
             except Exception as e:
                 if self._is_consumer_alive:
                     self._close_connection()
