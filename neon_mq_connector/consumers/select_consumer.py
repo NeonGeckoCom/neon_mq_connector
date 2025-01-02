@@ -206,9 +206,17 @@ class SelectConsumerThread(threading.Thread):
                 super(SelectConsumerThread, self).run()
                 self.connection: pika.SelectConnection = self.create_connection()
                 self.connection.ioloop.start()
+            except (pika.exceptions.ChannelClosed,
+                    pika.exceptions.ConnectionClosed) as e:
+                LOG.info(f"Closed {e.reply_code}: {e.reply_text}")
+                if not self._stopping:
+                    # Connection was unexpectedly closed
+                    self._close_connection()
+                    self.error_func(self, e)
             except Exception as e:
                 LOG.error(f"Failed to start io loop on consumer thread {self.name!r}: {e}")
                 self._close_connection()
+                self.error_func(self, e)
 
     def _close_connection(self, mark_consumer_as_dead: bool = True):
         try:
