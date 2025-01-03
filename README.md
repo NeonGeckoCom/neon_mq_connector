@@ -65,7 +65,30 @@ A response may be sent via:
                        properties=pika.BasicProperties(expiration='1000')
                        )
 ```
-Where `<queue>` is the queue to which the response will be published, and `data` is a `bytes` response (generally a `base64`-encoded `dict`).
+Where `<queue>` is the queue to which the response will be published, and `data`
+is a `bytes` response (generally a `base64`-encoded `dict`).
+
+#### Multi-part Responses
+A callback function may choose to publish multiple response messages so the client
+may receive partial responses as they are being generated. If multiple responses
+will be returned, the following requirements must be met:
+- Each response must be a dict with `_part` and `_is_final` keys.
+- `_part` is defined as a non-negative integer (the first response will specify `0`).
+- The final response must specify `_is_final=True`
+- The final response *MUST NOT* require the client to handle partial responses
+
+## Client Requests
+Most client applications will interact with services via `send_mq_request`. This
+function will return a `dict` response to the input message.
+
+### Multi-part Responses
+A caller may optionally include a `stream_callback` argument which may receive
+partial responses if supported by the service generating the response. The
+`stream_callback` will always be called with the final result that is returned
+by `send_mq_request`. Keep in mind that the `timeout` param passed to 
+`send_mq_request` applies to the full response, so the `timeout` value should
+reflect the longest time it will take for a final response to be generated, plus
+some margin.
 
 ### [BETA] Asynchronous Consumers
 
