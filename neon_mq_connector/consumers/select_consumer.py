@@ -30,7 +30,7 @@
 import threading
 import time
 
-from asyncio import Event, run
+from asyncio import Event, Lock, run
 from typing import Optional
 
 import pika.exceptions
@@ -96,6 +96,7 @@ class SelectConsumerThread(threading.Thread):
         self.exchange_reset = exchange_reset
 
         self.connection: Optional[pika.SelectConnection] = None
+        self._connection_lock = Lock()
         self.connection_failed_attempts = 0
         self.max_connection_failed_attempts = 3
 
@@ -185,10 +186,14 @@ class SelectConsumerThread(threading.Thread):
             self.error_func(self, e)
 
     def on_close(self, _, e):
+        self._consumer_started.clear()
         if isinstance(e, pika.exceptions.ConnectionClosed):
             LOG.info(f"Connection closed normally: {e}")
-        if not self._stopping:
+        else:
             LOG.error(f"Closing MQ connection due to exception: {e}")
+        if not self._stopping:
+            # Connection was gracefully closed by the server. Try to re-connect
+            LOG.info(f"Trying to reconnect after server closed connection")
             self.reconnect()
 
     @property
@@ -200,10 +205,9 @@ class SelectConsumerThread(threading.Thread):
         return self._consumer_started.is_set()
 
     def run(self):
-        """Starting connnection io loop """
+        """Starting connection io loop """
         if not self.is_consuming:
             try:
-                super(SelectConsumerThread, self).run()
                 self.connection: pika.SelectConnection = self.create_connection()
                 self.connection.ioloop.start()
             except (pika.exceptions.ChannelClosed,
@@ -217,6 +221,8 @@ class SelectConsumerThread(threading.Thread):
                 LOG.error(f"Failed to start io loop on consumer thread {self.name!r}: {e}")
                 self._close_connection()
                 self.error_func(self, e)
+        else:
+            LOG.warning("Consumer already running!")
 
     def _close_connection(self, mark_consumer_as_dead: bool = True):
         try:
@@ -230,7 +236,7 @@ class SelectConsumerThread(threading.Thread):
                 LOG.info(f"Channel closed")
             if self.connection:
                 self.connection.ioloop.stop()
-            self.connection = None
+            # self.connection = None
         except Exception as e:
             LOG.error(f"Failed to close connection for Consumer {self.name!r}: {e}")
         self._is_consuming = False
@@ -240,8 +246,9 @@ class SelectConsumerThread(threading.Thread):
         else:
             self._stopping = False
 
-    def reconnect(self, wait_interval: int = 1):
+    def reconnect(self, wait_interval: int = 5):
         self._close_connection(mark_consumer_as_dead=False)
+        # TODO: Find a better way to wait for shutdown/server restart
         time.sleep(wait_interval)
         self.run()
 
