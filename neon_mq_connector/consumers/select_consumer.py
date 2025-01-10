@@ -248,7 +248,8 @@ class SelectConsumerThread(threading.Thread):
 
     def reconnect(self, wait_interval: int = 5):
         self._close_connection(mark_consumer_as_dead=False)
-        # TODO: Find a better way to wait for shutdown/server restart
+        # TODO: Find a better way to wait for shutdown/server restart. This will
+        #   fail to reconnect if the server isn't back up within `wait_interval`
         time.sleep(wait_interval)
         self.run()
 

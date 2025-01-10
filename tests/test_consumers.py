@@ -198,6 +198,7 @@ class TestSelectConsumer(TestCase):
         test_thread.on_close.assert_not_called()
 
         self.rmq_instance.stop()
+        sleep(1)  # Wait for the client to finish disconnecting
         test_thread.on_close.assert_called_once()
         self.assertFalse(test_thread.is_consuming)
         self.assertTrue(test_thread.is_consumer_alive)
