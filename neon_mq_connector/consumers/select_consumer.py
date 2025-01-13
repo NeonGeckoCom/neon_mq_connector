@@ -30,7 +30,7 @@
 import threading
 import time
 
-from asyncio import Event, Lock, run
+from asyncio import Event
 from typing import Optional
 
 import pika.exceptions
@@ -233,6 +233,13 @@ class SelectConsumerThread(threading.Thread):
                     raise TimeoutError(f"Timeout waiting for channel close. "
                                        f"is_closed={self.channel.is_closed}")
                 LOG.info(f"Channel closed")
+
+                # Wait for the connection to close
+                waiter = threading.Event()
+                while not self.connection.is_closed:
+                    waiter.wait(1)
+                LOG.info(f"Connection closed")
+
             if self.connection:
                 self.connection.ioloop.stop()
             # self.connection = None
