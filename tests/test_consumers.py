@@ -25,14 +25,12 @@
 # LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
 # NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 # SOFTWARE,  EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-import asyncio
-from time import sleep
-from unittest.mock import Mock
 
 import pytest
 
+from time import sleep
+from unittest.mock import Mock
 from unittest import TestCase
-
 from pika.connection import ConnectionParameters
 from pika.credentials import PlainCredentials
 from pika.exchange_type import ExchangeType
@@ -171,3 +169,47 @@ class TestSelectConsumer(TestCase):
         self.assertFalse(test_thread.is_consuming)
         self.assertFalse(test_thread.is_consumer_alive)
         test_thread.on_close.assert_not_called()
+
+    def test_handle_reconnection(self):
+        from neon_mq_connector.consumers.select_consumer import SelectConsumerThread
+        connection_params = ConnectionParameters(host='localhost',
+                                                 port=self.rmq_instance.port,
+                                                 virtual_host="/neon_testing",
+                                                 credentials=PlainCredentials(
+                                                     "test_user",
+                                                     "test_password"))
+        queue = "test_q"
+        callback = Mock()
+        error = Mock()
+
+        # Valid thread
+        test_thread = SelectConsumerThread(connection_params, queue, callback,
+                                           error)
+        test_thread.on_connected = Mock(side_effect=test_thread.on_connected)
+        test_thread.on_channel_open = Mock(side_effect=test_thread.on_channel_open)
+        test_thread.on_close = Mock(side_effect=test_thread.on_close)
+
+        test_thread.start()
+        while not test_thread.is_consuming:
+            sleep(0.1)
+
+        test_thread.on_connected.assert_called_once()
+        test_thread.on_channel_open.assert_called_once()
+        test_thread.on_close.assert_not_called()
+
+        self.rmq_instance.stop()
+        sleep(1)  # Wait for the client to finish disconnecting
+        test_thread.on_close.assert_called_once()
+        self.assertFalse(test_thread.is_consuming)
+        self.assertTrue(test_thread.is_consumer_alive)
+
+        self.rmq_instance.start()
+        # TODO: Wait for re-connection
+        while not test_thread.is_consuming:
+            sleep(0.1)
+        self.assertTrue(test_thread.is_consuming)
+        self.assertTrue(test_thread.is_consumer_alive)
+
+        test_thread.join(30)
+        self.assertFalse(test_thread.is_consuming)
+        self.assertFalse(test_thread.is_consumer_alive)
