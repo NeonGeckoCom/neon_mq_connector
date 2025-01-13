@@ -96,7 +96,6 @@ class SelectConsumerThread(threading.Thread):
         self.exchange_reset = exchange_reset
 
         self.connection: Optional[pika.SelectConnection] = None
-        self._connection_lock = Lock()
         self.connection_failed_attempts = 0
         self.max_connection_failed_attempts = 3
 
