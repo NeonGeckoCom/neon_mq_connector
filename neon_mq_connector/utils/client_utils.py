@@ -60,6 +60,8 @@ class NeonMQHandler(MQConnector):
     def shutdown(self):
         MQConnector.stop(self)
         self.connection.close()
+        if not self.connection.is_closed:
+            raise RuntimeError(f"Connection is still open: {self.connection}")
 
 
 def send_mq_request(vhost: str, request_data: dict, target_queue: str,
