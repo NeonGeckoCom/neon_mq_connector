@@ -147,15 +147,18 @@ class BlockingConsumerThread(threading.Thread):
         """Terminating consumer channel"""
         if self._is_consumer_alive:
             self._close_connection()
-            super(BlockingConsumerThread, self).join(timeout=timeout)
+            threading.Thread.join(self, timeout=timeout)
 
     def _close_connection(self):
         self._is_consumer_alive = False
         try:
             if self.connection and self.connection.is_open:
                 self.connection.close()
+            if self.connection.is_open:
+                raise RuntimeError(f"Connection still open: {self.connection}")
         except pika.exceptions.StreamLostError:
             pass
         except Exception as e:
             LOG.exception(f"Failed to close connection due to unexpected exception: {e}")
         self._consumer_started.clear()
+        LOG.info("Consumer connection closed")
