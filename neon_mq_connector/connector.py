@@ -63,7 +63,7 @@ class MQConnector(ABC):
 
     __run_retries__ = 5
     __max_consumer_restarts__ = -1
-    __consumer_join_timeout__ = 1
+    __consumer_join_timeout__ = 3
 
     async_consumers_enabled = False
 
@@ -560,9 +560,13 @@ class MQConnector(ABC):
             names = list(self.consumers)
         for name in names:
             try:
-                if isinstance(self.consumers.get(name), SUPPORTED_THREADED_CONSUMERS) and self.consumers[name].is_alive():
+                if isinstance(self.consumers.get(name),
+                              SUPPORTED_THREADED_CONSUMERS) and \
+                        self.consumers[name].is_alive():
                     self.consumers[name].join(timeout=self.__consumer_join_timeout__)
-                    time.sleep(self.__consumer_join_timeout__)
+                    if self.consumers[name].is_alive():
+                        LOG.error(f"Failed to join consumer thread: {name} "
+                                  f"after {self.__consumer_join_timeout__}s")
                     self.consumer_properties[name]['started'] = False
             except Exception as e:
                 raise ChildProcessError(e)

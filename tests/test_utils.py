@@ -43,7 +43,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from neon_mq_connector.utils import RepeatingTimer
 from neon_mq_connector.utils.connection_utils import get_timeout, retry, \
     wait_for_mq_startup
-from neon_mq_connector.utils.client_utils import MQConnector
+from neon_mq_connector.utils.client_utils import MQConnector, NeonMQHandler
 from neon_mq_connector.utils.network_utils import dict_to_b64, b64_to_dict
 
 from .fixtures import rmq_instance
@@ -116,15 +116,15 @@ class TestClientUtils(unittest.TestCase):
 
     def setUp(self) -> None:
         if self.test_connector is None:
-            test_conf = {
+            self.test_conf = {
                 "server": "localhost",
                 "port": self.rmq_instance.port,
                 "users": {"mq_handler": {"user": "test_user",
                                          "password": "test_password"}}}
             import neon_mq_connector.utils.client_utils
-            neon_mq_connector.utils.client_utils._default_mq_config = test_conf
+            neon_mq_connector.utils.client_utils._default_mq_config = self.test_conf
             vhost = "/neon_testing"
-            self.test_connector = SimpleMQConnector(config=test_conf,
+            self.test_connector = SimpleMQConnector(config=self.test_conf,
                                                     service_name="mq_handler",
                                                     vhost=vhost)
             self.test_connector.register_consumer("neon_utils_test",
@@ -198,6 +198,14 @@ class TestClientUtils(unittest.TestCase):
         from neon_mq_connector.utils.client_utils import send_mq_request
         with self.assertRaises(ValueError):
             send_mq_request("invalid_endpoint", {}, "test", "test", timeout=5)
+
+    def test_connector_shutdown(self):
+        connector = NeonMQHandler(config=self.test_conf,
+                                  service_name="mq_handler",
+                                  vhost="/neon_testing")
+        self.assertTrue(connector.connection.is_open)
+        connector.shutdown()
+        self.assertTrue(connector.connection.is_closed)
 
 
 class TestMQConnectionUtils(unittest.TestCase):

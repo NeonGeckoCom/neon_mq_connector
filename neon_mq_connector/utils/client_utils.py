@@ -57,6 +57,12 @@ class NeonMQHandler(MQConnector):
         self.connection = pika.BlockingConnection(
             parameters=self.get_connection_params(vhost))
 
+    def shutdown(self):
+        MQConnector.stop(self)
+        self.connection.close()
+        if not self.connection.is_closed:
+            raise RuntimeError(f"Connection is still open: {self.connection}")
+
 
 def send_mq_request(vhost: str, request_data: dict, target_queue: str,
                     response_queue: str = None, timeout: int = 30,
