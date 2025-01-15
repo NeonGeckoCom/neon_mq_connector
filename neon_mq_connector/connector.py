@@ -484,6 +484,10 @@ class MQConnector(ABC):
         elif 0 < restart_attempts < consumer_data.get('num_restarted', 0):
             err_msg = 'num restarts exceeded'
             self.consumers.pop(name, None)
+        elif self.consumers[name].queue_exclusive:
+            err_msg = 'Exclusive queue may not be restarted'
+            self.consumers.pop(name, None)
+            # TODO: Register a new subscriber?
         else:
             self.consumers[name] = self.consumer_thread_cls(**consumer_data['properties'])
             self.run_consumers(names=(name,))
