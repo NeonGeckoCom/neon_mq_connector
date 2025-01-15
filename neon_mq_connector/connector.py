@@ -531,7 +531,7 @@ class MQConnector(ABC):
                                       on_error=on_error, exchange=exchange,
                                       exchange_type=ExchangeType.fanout.value,
                                       exchange_reset=exchange_reset,
-                                      auto_ack=auto_ack, queue_exclusive=True,
+                                      auto_ack=auto_ack, queue_exclusive=False,
                                       skip_on_existing=skip_on_existing,
                                       restart_attempts=restart_attempts)
 
