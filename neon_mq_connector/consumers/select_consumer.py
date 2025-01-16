@@ -25,12 +25,10 @@
 # LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
 # NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 # SOFTWARE,  EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-
-
 import threading
 import time
 
-from asyncio import Event
+from asyncio import Event, get_event_loop, set_event_loop, new_event_loop
 from typing import Optional
 
 import pika.exceptions
@@ -205,6 +203,12 @@ class SelectConsumerThread(threading.Thread):
 
     def run(self):
         """Starting connection io loop """
+        try:
+            if get_event_loop() is None:
+                set_event_loop(new_event_loop())
+        except RuntimeError:
+            set_event_loop(new_event_loop())
+
         if not self.is_consuming:
             try:
                 self.connection: pika.SelectConnection = self.create_connection()
