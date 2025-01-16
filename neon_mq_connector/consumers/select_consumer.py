@@ -82,9 +82,9 @@ class SelectConsumerThread(threading.Thread):
             LOG.warning(e)
             loop = new_event_loop()
             set_event_loop(loop)
-            loop.run_until_complete(self._wait_until_exit)
+            loop.run_forever()
         self._consumer_started = Event()  # annotates that ConsumerThread is running
-        self._exit_event = Event()
+        # self._exit_event = Event()
         self._channel_closed = threading.Event()
         self._is_consumer_alive = True  # annotates that ConsumerThread is alive and shall be recreated
         self._stopping = False
@@ -105,8 +105,8 @@ class SelectConsumerThread(threading.Thread):
         self.connection_failed_attempts = 0
         self.max_connection_failed_attempts = 3
 
-    async def _wait_until_exit(self):
-        await self._exit_event.wait()
+    # async def _wait_until_exit(self):
+    #     await self._exit_event.wait()
 
     def create_connection(self) -> pika.SelectConnection:
         return pika.SelectConnection(parameters=self.connection_params,
@@ -277,7 +277,7 @@ class SelectConsumerThread(threading.Thread):
         """Terminating consumer channel"""
         if self.is_consumer_alive:
             self._close_connection(mark_consumer_as_dead=True)
-        self._exit_event.set()
+        # self._exit_event.set()
         LOG.info(f"Stopped consumer. Waiting up to {timeout}s for thread to terminate.")
         try:
             super().join(timeout=timeout)
