@@ -25,12 +25,10 @@
 # LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
 # NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 # SOFTWARE,  EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-
-
 import threading
 import time
 
-from asyncio import Event
+from asyncio import Event, get_event_loop, set_event_loop, new_event_loop
 from typing import Optional
 
 import pika.exceptions
@@ -78,6 +76,18 @@ class SelectConsumerThread(threading.Thread):
             to learn more about different exchanges
         """
         threading.Thread.__init__(self, *args, **kwargs)
+
+        # Use an available event loop, else create a new one for this consumer
+        try:
+            self._loop = get_event_loop()
+            self.__stop_loop_on_exit = False
+        except RuntimeError as e:
+            LOG.info(e)
+            self._loop = new_event_loop()
+            set_event_loop(self._loop)
+            self._loop.run_forever()
+            self.__stop_loop_on_exit = True
+
         self._consumer_started = Event()  # annotates that ConsumerThread is running
         self._channel_closed = threading.Event()
         self._is_consumer_alive = True  # annotates that ConsumerThread is alive and shall be recreated
@@ -103,7 +113,7 @@ class SelectConsumerThread(threading.Thread):
         return pika.SelectConnection(parameters=self.connection_params,
                                      on_open_callback=self.on_connected,
                                      on_open_error_callback=self.on_connection_fail,
-                                     on_close_callback=self.on_close,)
+                                     on_close_callback=self.on_close)
 
     def on_connected(self, _):
         """Called when we are fully connected to RabbitMQ"""
@@ -204,7 +214,11 @@ class SelectConsumerThread(threading.Thread):
         return self._consumer_started.is_set()
 
     def run(self):
-        """Starting connection io loop """
+        """
+        Starting connection io loop
+        """
+        # Ensure there is an event loop in this thread
+        set_event_loop(self._loop)
         if not self.is_consuming:
             try:
                 self.connection: pika.SelectConnection = self.create_connection()
@@ -263,6 +277,11 @@ class SelectConsumerThread(threading.Thread):
         """Terminating consumer channel"""
         if self.is_consumer_alive:
             self._close_connection(mark_consumer_as_dead=True)
+        try:
+            if self.__stop_loop_on_exit:
+                self._loop.stop()
+        except Exception as e:
+            LOG.error(f"failed to stop ioloop: {e}")
         LOG.info(f"Stopped consumer. Waiting up to {timeout}s for thread to terminate.")
         try:
             super().join(timeout=timeout)

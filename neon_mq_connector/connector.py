@@ -460,10 +460,12 @@ class MQConnector(ABC):
 
         if exchange_type == ExchangeType.fanout.value:
             LOG.info(f'Subscriber exchange listener registered: '
-                     f'[name={name},exchange={exchange},vhost={vhost}]')
+                     f'[name={name},exchange={exchange},vhost={vhost},'
+                     f'async={self.async_consumers_enabled}]')
         else:
             LOG.info(f'Consumer queue listener registered: '
-                     f'[name={name},queue={queue},vhost={vhost}]')
+                     f'[name={name},queue={queue},vhost={vhost},'
+                     f'async={self.async_consumers_enabled}]')
 
         self.consumers[name] = self.consumer_thread_cls(**self.consumer_properties[name]['properties'])
 
@@ -484,6 +486,10 @@ class MQConnector(ABC):
         elif 0 < restart_attempts < consumer_data.get('num_restarted', 0):
             err_msg = 'num restarts exceeded'
             self.consumers.pop(name, None)
+        elif self.consumers[name].queue_exclusive:
+            err_msg = 'Exclusive queue may not be restarted'
+            self.consumers.pop(name, None)
+            # TODO: Register a new subscriber?
         else:
             self.consumers[name] = self.consumer_thread_cls(**consumer_data['properties'])
             self.run_consumers(names=(name,))
@@ -525,7 +531,7 @@ class MQConnector(ABC):
                                       on_error=on_error, exchange=exchange,
                                       exchange_type=ExchangeType.fanout.value,
                                       exchange_reset=exchange_reset,
-                                      auto_ack=auto_ack, queue_exclusive=True,
+                                      auto_ack=auto_ack, queue_exclusive=False,
                                       skip_on_existing=skip_on_existing,
                                       restart_attempts=restart_attempts)
 
