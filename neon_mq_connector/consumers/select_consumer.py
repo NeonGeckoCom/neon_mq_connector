@@ -218,7 +218,9 @@ class SelectConsumerThread(threading.Thread):
             get_event_loop()
         except RuntimeError as e:
             LOG.warning(e)
-            set_event_loop(new_event_loop())
+            loop = new_event_loop()
+            set_event_loop(loop)
+            loop.run_forever()
         if not self.is_consuming:
             try:
                 self.connection: pika.SelectConnection = self.create_connection()
