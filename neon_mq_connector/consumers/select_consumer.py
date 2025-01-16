@@ -98,10 +98,15 @@ class SelectConsumerThread(threading.Thread):
         self.max_connection_failed_attempts = 3
 
     def create_connection(self) -> pika.SelectConnection:
+        try:
+            io_loop = get_event_loop()
+        except RuntimeError:
+            io_loop = new_event_loop()
         return pika.SelectConnection(parameters=self.connection_params,
                                      on_open_callback=self.on_connected,
                                      on_open_error_callback=self.on_connection_fail,
-                                     on_close_callback=self.on_close,)
+                                     on_close_callback=self.on_close,
+                                     custom_ioloop=io_loop)
 
     def on_connected(self, _):
         """Called when we are fully connected to RabbitMQ"""
@@ -203,12 +208,6 @@ class SelectConsumerThread(threading.Thread):
 
     def run(self):
         """Starting connection io loop """
-        try:
-            if get_event_loop() is None:
-                set_event_loop(new_event_loop())
-        except RuntimeError:
-            set_event_loop(new_event_loop())
-
         if not self.is_consuming:
             try:
                 self.connection: pika.SelectConnection = self.create_connection()
