@@ -198,8 +198,11 @@ class SelectConsumerThread(threading.Thread):
         self._consumer_started.clear()
         if isinstance(e, pika.exceptions.ConnectionClosed):
             LOG.info(f"Connection closed normally: {e}")
+        elif isinstance(e, pika.exceptions.StreamLostError):
+            LOG.warning("MQ connection lost; "
+                        "RabbitMQ is likely temporarily unavailable.")
         else:
-            LOG.error(f"Closing MQ connection due to exception: {e}")
+            LOG.error(f"MQ connection closed due to exception: {e}")
         if not self._stopping:
             # Connection was gracefully closed by the server. Try to re-connect
             LOG.info(f"Trying to reconnect after server closed connection")
