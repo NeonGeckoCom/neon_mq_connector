@@ -65,7 +65,7 @@ class MQConnector(ABC):
     __max_consumer_restarts__ = -1
     __consumer_join_timeout__ = 3
 
-    async_consumers_enabled = False
+    async_consumers_enabled = os.environ.get("MQ_ASYNC_CONSUMERS", True)
 
     @staticmethod
     def init_config(config: Optional[dict] = None) -> dict:
