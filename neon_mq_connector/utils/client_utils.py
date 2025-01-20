@@ -50,6 +50,14 @@ _default_mq_config = {
 
 
 class NeonMQHandler(MQConnector):
+    """
+    This class is intended for use with `send_mq_request` for simple,
+    transactional reqeusts. Applications needing a persistent connection to
+    MQ services should implement `MQConnector` directly.
+    """
+
+    async_consumers_enabled = False
+
     def __init__(self, config: dict, service_name: str, vhost: str):
         super().__init__(config, service_name)
         self.vhost = vhost

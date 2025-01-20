@@ -35,8 +35,7 @@ from unittest.mock import Mock
 import pytest
 import pika
 
-from threading import Thread
-
+from threading import Thread, Event
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
@@ -137,7 +136,7 @@ class TestClientUtils(unittest.TestCase):
     @classmethod
     def tearDownClass(cls) -> None:
         if cls.test_connector is not None:
-            cls.test_connector.stop_consumers()
+            cls.test_connector.stop()
 
     def test_send_mq_request_valid(self):
         from neon_mq_connector.utils.client_utils import send_mq_request
@@ -190,7 +189,8 @@ class TestClientUtils(unittest.TestCase):
         for p in processes:
             p.join(60)
 
-        self.assertEqual(len(processes), len(responses))
+        self.assertEqual(len(processes), len(responses),
+                         f"len(responses)={len(responses)}")
         for resp in responses.values():
             self.assertTrue(resp['success'], resp.get('reason'))
 
