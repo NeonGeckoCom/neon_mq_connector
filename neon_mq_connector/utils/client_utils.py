@@ -53,9 +53,7 @@ class NeonMQHandler(MQConnector):
     def __init__(self, config: dict, service_name: str, vhost: str):
         super().__init__(config, service_name)
         self.vhost = vhost
-        import pika
-        self.connection = pika.BlockingConnection(
-            parameters=self.get_connection_params(vhost))
+        self.connection = self.create_mq_connection(self.vhost)
 
     def shutdown(self):
         MQConnector.stop(self)

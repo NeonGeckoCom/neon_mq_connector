@@ -399,8 +399,12 @@ class MQConnector(ABC):
         """
         if not self.config:
             raise Exception('Configuration is not set')
-        return pika.BlockingConnection(
-            parameters=self.get_connection_params(vhost, **kwargs))
+        if self.async_consumers_enabled:
+            return pika.SelectConnection(
+                parameters=self.get_connection_params(vhost, **kwargs))
+        else:
+            return pika.BlockingConnection(
+                parameters=self.get_connection_params(vhost, **kwargs))
 
     def register_consumer(self, name: str, vhost: str, queue: str,
                           callback: callable,
