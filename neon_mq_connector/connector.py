@@ -305,6 +305,8 @@ class MQConnector(ABC):
                                 cls.create_unique_id())
 
         def _on_channel_open(new_channel):
+            while not new_channel.is_open:
+                LOG.warning(f"Waiting for channel to open ({new_channel})")
             if exchange:
                 new_channel.exchange_declare(exchange=exchange,
                                              exchange_type=exchange_type,
