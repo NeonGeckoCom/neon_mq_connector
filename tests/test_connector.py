@@ -408,7 +408,7 @@ class TestMQConnectorInit(unittest.TestCase):
         callback = Mock(side_effect=lambda *args: callback_event.set())
         connector.register_consumer("test_consumer", vhost=test_vhost,
                                     queue=test_queue, callback=callback)
-        connector.run()
+        connector.run(run_sync=False, run_observer=False)
 
         close_event = threading.Event()
         on_open = Mock()
