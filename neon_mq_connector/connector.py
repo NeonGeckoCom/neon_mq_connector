@@ -305,8 +305,6 @@ class MQConnector(ABC):
                                 cls.create_unique_id())
 
         def _on_channel_open(new_channel):
-            while not new_channel.is_open:
-                LOG.warning(f"Waiting for channel to open ({new_channel})")
             if exchange:
                 new_channel.exchange_declare(exchange=exchange,
                                              exchange_type=exchange_type,
@@ -326,10 +324,10 @@ class MQConnector(ABC):
             new_channel.close()
 
         if isinstance(connection, pika.BlockingConnection):
-            LOG.info(f"Using blocking connection for queue: {queue}")
+            LOG.info(f"Using blocking connection for request: {request_data}")
             _on_channel_open(connection.channel())
         else:
-            LOG.info(f"Using select connection for queue: {queue}")
+            LOG.debug(f"Using select connection for queue: {queue}")
             connection.channel(on_open_callback=_on_channel_open)
 
         LOG.debug(f"sent message: {request_data['message_id']}")
