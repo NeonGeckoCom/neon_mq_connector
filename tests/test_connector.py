@@ -410,8 +410,9 @@ class TestMQConnectorInit(unittest.TestCase):
                                     queue=test_queue, callback=callback)
         connector.run(run_sync=False, run_observer=False)
 
+        open_event = threading.Event()
         close_event = threading.Event()
-        on_open = Mock()
+        on_open = Mock(side_effect=lambda *args: open_event.set())
         on_error = Mock()
         on_close = Mock(side_effect=lambda *args: close_event.set())
 
@@ -439,6 +440,8 @@ class TestMQConnectorInit(unittest.TestCase):
         callback_event.clear()
 
         # Async connection emit
+        open_event.wait(timeout=5)
+        self.assertTrue(open_event.is_set())
         on_open.assert_called_once()
         message_id_2 = connector.emit_mq_message(async_connection,
                                                  request_data, queue=test_queue)
