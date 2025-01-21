@@ -326,6 +326,7 @@ class MQConnector(ABC):
             new_channel.close()
 
         if isinstance(connection, pika.BlockingConnection):
+            LOG.info("Using blocking connection")
             _on_channel_open(connection.channel())
         else:
             connection.channel(on_open_callback=_on_channel_open)
