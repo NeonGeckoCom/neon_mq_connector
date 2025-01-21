@@ -271,7 +271,8 @@ class MQConnector(ABC):
 
     @classmethod
     def emit_mq_message(cls,
-                        connection: pika.BlockingConnection,
+                        connection: Union[pika.BlockingConnection,
+                                          pika.SelectConnection],
                         request_data: dict,
                         exchange: Optional[str] = '',
                         queue: Optional[str] = '',
@@ -302,22 +303,26 @@ class MQConnector(ABC):
                                 .get("mq", {}).get("message_id") or
                                 cls.create_unique_id())
 
-        with connection.channel() as channel:
-            if exchange:
-                channel.exchange_declare(exchange=exchange,
-                                         exchange_type=exchange_type,
-                                         auto_delete=False)
-            if queue:
-                declared_queue = channel.queue_declare(queue=queue,
-                                                       auto_delete=False)
-                if exchange_type == ExchangeType.fanout.value:
-                    channel.queue_bind(queue=declared_queue.method.queue,
-                                       exchange=exchange)
-            channel.basic_publish(exchange=exchange or '',
-                                  routing_key=queue,
-                                  body=dict_to_b64(request_data),
-                                  properties=pika.BasicProperties(
-                                      expiration=str(expiration)))
+        channel = connection.channel()
+
+        if exchange:
+            channel.exchange_declare(exchange=exchange,
+                                     exchange_type=exchange_type,
+                                     auto_delete=False)
+        if queue:
+            declared_queue = channel.queue_declare(queue=queue,
+                                                   auto_delete=False)
+            if exchange_type == ExchangeType.fanout.value:
+                channel.queue_bind(queue=declared_queue.method.queue,
+                                   exchange=exchange)
+        channel.basic_publish(exchange=exchange or '',
+                              routing_key=queue,
+                              body=dict_to_b64(request_data),
+                              properties=pika.BasicProperties(
+                                  expiration=str(expiration)))
+        
+        channel.close()
+        
         LOG.debug(f"sent message: {request_data['message_id']}")
         return request_data['message_id']
 
