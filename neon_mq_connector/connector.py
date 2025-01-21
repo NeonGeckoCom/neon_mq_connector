@@ -30,6 +30,8 @@ import os
 import copy
 import time
 import uuid
+from asyncio import Event
+
 import pika
 import pika.exceptions
 
@@ -45,7 +47,6 @@ from neon_mq_connector.consumers import BlockingConsumerThread, SelectConsumerTh
 from neon_mq_connector.utils.connection_utils import wait_for_mq_startup, retry
 from neon_mq_connector.utils.network_utils import dict_to_b64
 from neon_mq_connector.utils.thread_utils import RepeatingTimer
-
 
 # DO NOT REMOVE ME: Defined for backward compatibility
 ConsumerThread = BlockingConsumerThread
@@ -272,7 +273,7 @@ class MQConnector(ABC):
     @classmethod
     def emit_mq_message(cls,
                         connection: Union[pika.BlockingConnection,
-                                          pika.SelectConnection],
+                        pika.SelectConnection],
                         request_data: dict,
                         exchange: Optional[str] = '',
                         queue: Optional[str] = '',
@@ -303,26 +304,30 @@ class MQConnector(ABC):
                                 .get("mq", {}).get("message_id") or
                                 cls.create_unique_id())
 
-        channel = connection.channel()
+        def _on_channel_open(new_channel):
+            if exchange:
+                new_channel.exchange_declare(exchange=exchange,
+                                             exchange_type=exchange_type,
+                                             auto_delete=False)
+            if queue:
+                declared_queue = new_channel.queue_declare(queue=queue,
+                                                           auto_delete=False)
+                if exchange_type == ExchangeType.fanout.value:
+                    new_channel.queue_bind(queue=declared_queue.method.queue,
+                                           exchange=exchange)
+            new_channel.basic_publish(exchange=exchange or '',
+                                      routing_key=queue,
+                                      body=dict_to_b64(request_data),
+                                      properties=pika.BasicProperties(
+                                          expiration=str(expiration)))
 
-        if exchange:
-            channel.exchange_declare(exchange=exchange,
-                                     exchange_type=exchange_type,
-                                     auto_delete=False)
-        if queue:
-            declared_queue = channel.queue_declare(queue=queue,
-                                                   auto_delete=False)
-            if exchange_type == ExchangeType.fanout.value:
-                channel.queue_bind(queue=declared_queue.method.queue,
-                                   exchange=exchange)
-        channel.basic_publish(exchange=exchange or '',
-                              routing_key=queue,
-                              body=dict_to_b64(request_data),
-                              properties=pika.BasicProperties(
-                                  expiration=str(expiration)))
-        
-        channel.close()
-        
+            new_channel.close()
+
+        if isinstance(connection, pika.BlockingConnection):
+            _on_channel_open(connection.channel())
+        else:
+            connection.channel(on_open_callback=_on_channel_open)
+
         LOG.debug(f"sent message: {request_data['message_id']}")
         return request_data['message_id']
 
@@ -453,17 +458,17 @@ class MQConnector(ABC):
         self.consumer_properties.setdefault(name, {})
         self.consumer_properties[name]['properties'] = \
             dict(
-                 name=name,
-                 connection_params=self.get_connection_params(vhost),
-                 queue=queue,
-                 queue_reset=queue_reset,
-                 callback_func=callback,
-                 exchange=exchange,
-                 exchange_reset=exchange_reset,
-                 exchange_type=exchange_type,
-                 error_func=error_handler,
-                 auto_ack=auto_ack,
-                 queue_exclusive=queue_exclusive,
+                name=name,
+                connection_params=self.get_connection_params(vhost),
+                queue=queue,
+                queue_reset=queue_reset,
+                callback_func=callback,
+                exchange=exchange,
+                exchange_reset=exchange_reset,
+                exchange_type=exchange_type,
+                error_func=error_handler,
+                auto_ack=auto_ack,
+                queue_exclusive=queue_exclusive,
             )
         self.consumer_properties[name]['restart_attempts'] = int(restart_attempts)
         self.consumer_properties[name]['started'] = False
@@ -561,8 +566,8 @@ class MQConnector(ABC):
             names = list(self.consumers)
         for name in names:
             if (isinstance(self.consumers.get(name), SUPPORTED_THREADED_CONSUMERS)
-                and self.consumers[name].is_consumer_alive
-                and not self.consumers[name].is_consuming):
+                    and self.consumers[name].is_consumer_alive
+                    and not self.consumers[name].is_consuming):
                 self.consumers[name].daemon = daemon
                 self.consumers[name].start()
                 self.consumer_properties[name]['started'] = True
