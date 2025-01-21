@@ -294,6 +294,9 @@ class MQConnector(ABC):
         :raises ValueError: invalid request data provided
         :returns message_id: id of the sent message
         """
+        # Make a copy of request_data to prevent modifying the input object
+        request_data = dict(request_data)
+
         if not isinstance(request_data, dict):
             raise TypeError(f"Expected dict and got {type(request_data)}")
         if not request_data:

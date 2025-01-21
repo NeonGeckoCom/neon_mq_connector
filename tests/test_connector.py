@@ -34,6 +34,8 @@ import pytest
 
 from unittest.mock import Mock, patch
 from ovos_utils.log import LOG
+from pika.adapters.blocking_connection import BlockingConnection
+from pika.adapters.select_connection import SelectConnection
 from pika.exchange_type import ExchangeType
 
 from neon_mq_connector.connector import MQConnector, ConsumerThreadInstance
@@ -384,4 +386,79 @@ class TestMQConnectorInit(unittest.TestCase):
         callback.assert_called_once()
         connector.stop()
 
-    # TODO: test other methods
+    def test_emit_mq_message(self):
+        from neon_mq_connector.utils.network_utils import b64_to_dict
+
+        test_config = {"server": "127.0.0.1",
+                       "port": self.rmq_instance.port,
+                       "users": {
+                           "test": {
+                               "user": "test_user",
+                               "password": "test_password"
+                           }}}
+        test_vhost = "/neon_testing"
+        test_queue = "test_queue"
+        connector = MQConnector(test_config, "test")
+        connector.vhost = test_vhost
+
+        request_data = {"test": True,
+                        "data": ["test"]}
+
+        callback_event = threading.Event()
+        callback = Mock(side_effect=lambda *args: callback_event.set())
+        connector.register_consumer("test_consumer", vhost=test_vhost,
+                                    queue=test_queue, callback=callback)
+        connector.run()
+
+        close_event = threading.Event()
+        on_open = Mock()
+        on_error = Mock()
+        on_close = Mock(side_effect=lambda *args: close_event.set())
+
+        blocking_connection = BlockingConnection(
+            parameters=connector.get_connection_params(test_vhost))
+
+        async_connection = SelectConnection(
+            parameters=connector.get_connection_params(test_vhost),
+            on_open_callback=on_open, on_open_error_callback=on_error,
+            on_close_callback=on_close)
+        async_thread = threading.Thread(target=async_connection.ioloop.start,
+                                        daemon=True)
+        async_thread.start()
+
+        # Blocking connection emit
+        message_id = connector.emit_mq_message(blocking_connection,
+                                               request_data, queue=test_queue)
+        self.assertIsInstance(message_id, str)
+        callback_event.wait(timeout=5)
+        self.assertTrue(callback_event.is_set())
+        callback.assert_called_once()
+        self.assertEqual(b64_to_dict(callback.call_args.args[3]),
+                         {**request_data, "message_id": message_id})
+        callback.reset_mock()
+        callback_event.clear()
+
+        # Async connection emit
+        on_open.assert_called_once()
+        message_id_2 = connector.emit_mq_message(async_connection,
+                                                 request_data, queue=test_queue)
+        self.assertIsInstance(message_id, str)
+        self.assertNotEqual(message_id, message_id_2)
+        callback_event.wait(timeout=5)
+        self.assertTrue(callback_event.is_set())
+        callback.assert_called_once()
+        self.assertEqual(b64_to_dict(callback.call_args.args[3]),
+                         {**request_data, "message_id": message_id_2})
+
+        on_close.assert_not_called()
+        connector.stop()
+
+        async_connection.close()
+        close_event.wait(timeout=5)
+        self.assertTrue(close_event.is_set())
+        on_close.assert_called_once()
+
+        async_thread.join(3)
+        on_error.assert_not_called()
+
+# TODO: test other methods
