@@ -108,6 +108,7 @@ class MQConnector(ABC):
         self._vhost = None
         self._sync_thread = None
         self._observer_thread = None
+        self._started = False
 
         # Define properties and initialize them
         self.sync_period = 0
@@ -117,6 +118,10 @@ class MQConnector(ABC):
         self.testing_envs = set()
         self.testing_prefix_envs = None
         self.__init_configurable_properties()
+
+    @property
+    def started(self):
+        return self._started
 
     @property
     def config(self):
@@ -616,7 +621,8 @@ class MQConnector(ABC):
         """
         host = self.config.get('server', 'localhost')
         port = int(self.config.get('port', '5672'))
-        wait_for_mq_startup(host, port)
+        if not wait_for_mq_startup(host, port, kwargs.get('mq_timeout', 10)):
+            raise ConnectionError(f"Failed to connect to MQ at {host}:{port}")
         kwargs.setdefault('consumer_names', ())
         kwargs.setdefault('daemonize_consumers', False)
         self.pre_run(**kwargs)
@@ -628,6 +634,7 @@ class MQConnector(ABC):
         if run_observer:
             self.observer_thread.start()
         self.post_run(**kwargs)
+        self._started = True
 
     @property
     def sync_thread(self) -> RepeatingTimer:
@@ -680,6 +687,7 @@ class MQConnector(ABC):
         self.stop_consumers()
         self.stop_sync_thread()
         self.stop_observer_thread()
+        self._started = False
 
     def pre_run(self, **kwargs):
         """Additional logic invoked before method run()"""
