@@ -175,11 +175,5 @@ def check_rmq_is_available(
         connection.close()
         return True
     except AMQPConnectionError as e:
-        if isinstance(e, AMQPConnectorException):
-            LOG.warning(f"RMQ is likely still starting up ({e})")
-        elif isinstance(e, IncompatibleProtocolError):
-            LOG.warning(f"RMQ is likely still starting up ({e})")
-        else:
-            # Unhandled exception, raise it for external handling
-            raise e
+        LOG.warning(f"RMQ is likely still starting up ({e})")
         return False
