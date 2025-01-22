@@ -27,9 +27,11 @@
 # SOFTWARE,  EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 import time
+from threading import Event
 from typing import Union, Callable, Optional
 from ovos_utils.log import LOG
 from pika.adapters.blocking_connection import BlockingConnection
+from pika.adapters.utils.connection_workflow import AMQPConnectionWorkflowFailed, AMQPConnectorException
 from pika.connection import ConnectionParameters
 from pika.exceptions import AMQPConnectionError, IncompatibleProtocolError
 
@@ -149,6 +151,7 @@ def wait_for_mq_startup(addr: str, port: int, timeout: int = 60,
     :param port: MQ port to query
     :param timeout: Max seconds to wait for connection to come online
     """
+    waiter = Event()
     stop_time = time.time() + timeout
     LOG.debug(f"Waiting for MQ server at {addr}:{port} to come online")
     while not check_port_is_open(addr, port):
@@ -160,8 +163,7 @@ def wait_for_mq_startup(addr: str, port: int, timeout: int = 60,
         if time.time() > stop_time:
             LOG.warning(f"Timed out waiting for RMQ after {timeout}s")
             return False
-        # TODO: Better method than sleep
-        time.sleep(2)
+        waiter.wait(5)
     LOG.info("MQ Server Started")
     return True
 
@@ -173,8 +175,10 @@ def check_rmq_is_available(
         connection.close()
         return True
     except AMQPConnectionError as e:
-        if isinstance(e, IncompatibleProtocolError):
-            LOG.warning("RMQ is likely still starting up")
+        if isinstance(e, AMQPConnectorException):
+            LOG.warning(f"RMQ is likely still starting up ({e})")
+        elif isinstance(e, IncompatibleProtocolError):
+            LOG.warning(f"RMQ is likely still starting up ({e})")
         else:
             # Unhandled exception, raise it for external handling
             raise e
