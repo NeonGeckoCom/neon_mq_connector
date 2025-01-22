@@ -159,11 +159,12 @@ def wait_for_mq_startup(addr: str, port: int, timeout: int = 60,
             LOG.warning(f"Timed out waiting for port to open after {timeout}s")
             return False
     LOG.info("Waiting for RMQ broker to load")
-    while not check_rmq_is_available(connection_params):
-        if time.time() > stop_time:
-            LOG.warning(f"Timed out waiting for RMQ after {timeout}s")
-            return False
-        waiter.wait(5)
+    if connection_params:
+        while not check_rmq_is_available(connection_params):
+            if time.time() > stop_time:
+                LOG.warning(f"Timed out waiting for RMQ after {timeout}s")
+                return False
+            waiter.wait(5)
     LOG.info("MQ Server Started")
     return True
 
@@ -175,5 +176,5 @@ def check_rmq_is_available(
         connection.close()
         return True
     except AMQPConnectionError as e:
-        LOG.warning(f"RMQ is likely still starting up ({e})")
+        LOG.warning(f"RMQ is likely still starting up (e={e})")
         return False
