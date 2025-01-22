@@ -32,7 +32,7 @@ import unittest
 import pika
 import pytest
 
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 from ovos_utils.log import LOG
 from pika.exchange_type import ExchangeType
 
@@ -300,6 +300,7 @@ class MQConnectorChildAsyncModeTest(MQConnectorChildTest):
         self.connector_instance.async_consumers_enabled = True
 
 
+@pytest.mark.usefixtures("rmq_instance")
 class TestMQConnectorInit(unittest.TestCase):
     def test_connector_init(self):
         connector = MQConnector(None, "test")
@@ -339,4 +340,48 @@ class TestMQConnectorInit(unittest.TestCase):
         self.assertEqual(connector.vhost, test_vhost)
         connector.vhost = "/testing"
         self.assertEqual(connector.vhost, test_vhost)
+
+    @patch("neon_mq_connector.utils.connection_utils.get_timeout")
+    def test_init_rmq_down(self, get_timeout):
+        get_timeout.return_value = 0.01
+        test_config = {"server": "127.0.0.1",
+                       "port": self.rmq_instance.port,
+                       "users": {
+                           "test": {
+                               "user": "test_user",
+                               "password": "test_password"
+                           }}}
+        test_vhost = "/neon_testing"
+        test_queue = "test_queue"
+        connector = MQConnector(test_config, "test")
+        connector.vhost = test_vhost
+
+        request_data = {"test": True,
+                        "data": ["test"]}
+
+        callback_event = threading.Event()
+        callback = Mock(side_effect=lambda *args: callback_event.set())
+        connector.register_consumer("test_consumer", vhost=test_vhost,
+                                    queue=test_queue, callback=callback)
+
+        # Connector fails to start without RMQ
+        self.rmq_instance.stop()
+        connector.run(run_sync=False, run_observer=False, mq_timeout=1)
+        self.assertFalse(connector.started)
+        for consumer in connector.consumers.values():
+            # The consumer is marked as alive at init, until explicitly joined
+            # self.assertFalse(consumer.is_consumer_alive)
+            self.assertFalse(consumer.is_consuming)
+            self.assertFalse(consumer.is_alive())
+
+        # Restart connector after RMQ is started
+        self.rmq_instance.start()
+        connector.run(run_sync=False, run_observer=False)
+        self.assertTrue(connector.started)
+        connector.send_message(request_data, test_vhost, queue=test_queue)
+        callback_event.wait(timeout=5)
+        self.assertTrue(callback_event.is_set())
+        callback.assert_called_once()
+        connector.stop()
+
     # TODO: test other methods
