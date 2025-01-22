@@ -25,7 +25,7 @@
 # LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
 # NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 # SOFTWARE,  EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-
+import logging
 import time
 from asyncio import IncompleteReadError
 from threading import Event
@@ -170,15 +170,21 @@ def wait_for_mq_startup(addr: str, port: int, timeout: int = 60,
 
 def check_rmq_is_available(
         connection_params: Optional[ConnectionParameters]) -> bool:
+    pika_log = logging.getLogger("pika")
+    pika_level = pika_log.getEffectiveLevel()
+    success = False
     try:
+        pika_log.setLevel(logging.CRITICAL)
         connection_params.connection_attempts = 5
         connection_params.retry_delay = 5
         connection = BlockingConnection(connection_params)
         connection.close()
-        return True
+        success = True
     except AMQPConnectionError as e:
         if isinstance(e, IncompatibleProtocolError):
             LOG.warning(f"RMQ is likely still starting up (e={e})")
         else:
             raise e
-        return False
+    finally:
+        pika_log.setLevel(pika_level)
+        return success

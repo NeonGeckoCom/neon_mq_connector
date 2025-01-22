@@ -159,7 +159,7 @@ class SelectConsumerThread(threading.Thread):
         self._consumer_started.set()
 
     def on_channel_close(self, *_, **__):
-        LOG.info(f"Channel closed.")
+        LOG.debug(f"Channel closed.")
         self._channel_closed.set()
 
     def declare_queue(self, _unused_frame: Optional[Method] = None):
@@ -266,13 +266,13 @@ class SelectConsumerThread(threading.Thread):
                 if not self._channel_closed.wait(15):
                     raise TimeoutError(f"Timeout waiting for channel close. "
                                        f"is_closed={self.channel.is_closed}")
-                LOG.info(f"Channel closed")
+                LOG.debug(f"Channel closed")
 
                 # Wait for the connection to close
                 waiter = threading.Event()
                 while not self.connection.is_closed:
                     waiter.wait(1)
-                LOG.info(f"Connection closed")
+                LOG.debug(f"Connection closed")  # Logged in `on_channel_close`
 
             if self.connection:
                 self.connection.ioloop.stop()
