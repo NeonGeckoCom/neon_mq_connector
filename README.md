@@ -82,7 +82,7 @@ set the class-attribute `async_consumers_enabled` to `False`:
    from neon_mq_connector import MQConnector
    
    class MQConnectorChild(MQConnector):
-      async_consumers_enabled  = True
+      async_consumers_enabled = False
    ```
 2. To disable the use of async consumers at runtime, set the `MQ_ASYNC_CONSUMERS`
 envvar to `False`
