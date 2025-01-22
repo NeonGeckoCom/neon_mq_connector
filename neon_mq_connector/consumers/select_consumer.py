@@ -119,15 +119,32 @@ class SelectConsumerThread(threading.Thread):
         """Called when we are fully connected to RabbitMQ"""
         self.connection.channel(on_open_callback=self.on_channel_open)
 
-    def on_connection_fail(self, *_, **__):
-        """ Called when connection to RabbitMQ fails"""
+    def on_connection_fail(self, connection: pika.SelectConnection,
+                           error: pika.exceptions.AMQPConnectionError):
+        """
+        Called when connection to RabbitMQ fails
+        @param error: Error message describing reason for connection error
+        """
+        if isinstance(error, pika.exceptions.IncompatibleProtocolError):
+            LOG.warning(f"Reported incompatible protocol. RMQ is likely not "
+                        f"yet ready")
+            time.sleep(10)
+        elif isinstance(error,
+                        (pika.exceptions.AuthenticationError,
+                         pika.exceptions.ProbableAuthenticationError)):
+            self.error_func(f"Authentication error: {error}")
+            self._close_connection(mark_consumer_as_dead=True)
+            return
+        else:
+            LOG.error(f"Connection failed with: {error.__class__}-{error}")
         self.connection_failed_attempts += 1
         if self.connection_failed_attempts > self.max_connection_failed_attempts:
-            LOG.error(f'Failed establish MQ connection after {self.connection_failed_attempts} attempts')
+            LOG.error(f'Failed to establish MQ connection after '
+                      f'{self.connection_failed_attempts} attempts')
             self.error_func("Connection not established")
             self._close_connection(mark_consumer_as_dead=True)
         else:
-            self.reconnect()
+            self.reconnect(5)
 
     def on_channel_open(self, new_channel: Channel):
         """Called when our channel has opened"""
@@ -206,7 +223,7 @@ class SelectConsumerThread(threading.Thread):
         if not self._stopping:
             # Connection was gracefully closed by the server. Try to re-connect
             LOG.info(f"Trying to reconnect after server closed connection")
-            self.reconnect()
+            self.reconnect(5)
 
     @property
     def is_consumer_alive(self) -> bool:
@@ -269,7 +286,7 @@ class SelectConsumerThread(threading.Thread):
         else:
             self._stopping = False
 
-    def reconnect(self, wait_interval: int = 5):
+    def reconnect(self, wait_interval: int = 0):
         self._close_connection(mark_consumer_as_dead=False)
         # TODO: Find a better way to wait for shutdown/server restart. This will
         #   fail to reconnect if the server isn't back up within `wait_interval`
