@@ -150,21 +150,18 @@ def wait_for_mq_startup(addr: str, port: int, timeout: int = 60,
     :param timeout: Max seconds to wait for connection to come online
     """
     stop_time = time.time() + timeout
-    was_offline = False
     LOG.debug(f"Waiting for MQ server at {addr}:{port} to come online")
     while not check_port_is_open(addr, port):
-        was_offline = True
         if time.time() > stop_time:
             LOG.warning(f"Timed out waiting for port to open after {timeout}s")
             return False
-    if was_offline:
-        LOG.info("MQ server just started. Waiting for server to load")
-        while not check_rmq_is_available(connection_params):
-            if time.time() > stop_time:
-                LOG.warning(f"Timed out waiting for RMQ after {timeout}s")
-                return False
-            # TODO: Better method than sleep
-            time.sleep(2)
+    LOG.info("Waiting for RMQ broker to load")
+    while not check_rmq_is_available(connection_params):
+        if time.time() > stop_time:
+            LOG.warning(f"Timed out waiting for RMQ after {timeout}s")
+            return False
+        # TODO: Better method than sleep
+        time.sleep(2)
     LOG.info("MQ Server Started")
     return True
 
