@@ -27,8 +27,11 @@
 # SOFTWARE,  EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 import time
-from typing import Union, Callable
+from typing import Union, Callable, Optional
 from ovos_utils.log import LOG
+from pika.adapters.blocking_connection import BlockingConnection
+from pika.connection import ConnectionParameters
+from pika.exceptions import AMQPConnectionError, IncompatibleProtocolError
 
 from neon_mq_connector.utils.network_utils import check_port_is_open
 
@@ -136,7 +139,9 @@ def retry(callback_on_exceeded: Union[str, Callable] = None,
     return decorator
 
 
-def wait_for_mq_startup(addr: str, port: int, timeout: int = 60) -> bool:
+def wait_for_mq_startup(addr: str, port: int, timeout: int = 60,
+                        connection_params: Optional[ConnectionParameters] = None
+                        ) -> bool:
     """
     Wait up to `timeout` seconds for the MQ connection at `addr`:`port`
     to come online.
@@ -145,10 +150,35 @@ def wait_for_mq_startup(addr: str, port: int, timeout: int = 60) -> bool:
     :param timeout: Max seconds to wait for connection to come online
     """
     stop_time = time.time() + timeout
+    was_offline = False
     LOG.debug(f"Waiting for MQ server at {addr}:{port} to come online")
     while not check_port_is_open(addr, port):
+        was_offline = True
         if time.time() > stop_time:
-            LOG.warning(f"Timed out waiting after {timeout}s")
+            LOG.warning(f"Timed out waiting for port to open after {timeout}s")
             return False
+    if was_offline:
+        LOG.info("MQ server just started. Waiting for server to load")
+        while not check_rmq_is_available(connection_params):
+            if time.time() > stop_time:
+                LOG.warning(f"Timed out waiting for RMQ after {timeout}s")
+                return False
+            # TODO: Better method than sleep
+            time.sleep(2)
     LOG.info("MQ Server Started")
     return True
+
+
+def check_rmq_is_available(
+        connection_params: Optional[ConnectionParameters]) -> bool:
+    try:
+        connection = BlockingConnection(connection_params)
+        connection.close()
+        return True
+    except AMQPConnectionError as e:
+        if isinstance(e, IncompatibleProtocolError):
+            LOG.warning("RMQ is likely still starting up")
+        else:
+            # Unhandled exception, raise it for external handling
+            raise e
+        return False
