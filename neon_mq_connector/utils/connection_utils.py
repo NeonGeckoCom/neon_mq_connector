@@ -27,6 +27,7 @@
 # SOFTWARE,  EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 import time
+from asyncio import IncompleteReadError
 from threading import Event
 from typing import Union, Callable, Optional
 from ovos_utils.log import LOG
@@ -176,5 +177,8 @@ def check_rmq_is_available(
         connection.close()
         return True
     except AMQPConnectionError as e:
-        LOG.warning(f"RMQ is likely still starting up (e={e})")
+        if isinstance(e, IncompatibleProtocolError):
+            LOG.warning(f"RMQ is likely still starting up (e={e})")
+        else:
+            raise e
         return False
