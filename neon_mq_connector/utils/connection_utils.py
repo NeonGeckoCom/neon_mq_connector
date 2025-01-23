@@ -160,10 +160,17 @@ def wait_for_mq_startup(addr: str, port: int, timeout: int = 60,
             return False
     LOG.info("Waiting for RMQ broker to load")
     if connection_params:
+        waiter = Event()
+        rmq_ready = True
         while not check_rmq_is_available(connection_params):
+            rmq_ready = False
             if time.time() > stop_time:
                 LOG.warning(f"Timed out waiting for RMQ after {timeout}s")
                 return False
+            waiter.wait(5)
+        if not rmq_ready:
+            LOG.info("MQ just started. Wait some time for queues, etc. to load")
+            waiter.wait(15)
     LOG.info("MQ Server Started")
     return True
 
@@ -175,8 +182,6 @@ def check_rmq_is_available(
     success = False
     try:
         pika_log.setLevel(logging.CRITICAL)
-        connection_params.connection_attempts = 5
-        connection_params.retry_delay = 5
         connection = BlockingConnection(connection_params)
         connection.close()
         success = True
