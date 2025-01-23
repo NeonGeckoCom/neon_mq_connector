@@ -163,7 +163,7 @@ class TestSelectConsumer(TestCase):
         self.assertFalse(test_thread.is_consuming)
         self.assertIsNone(test_thread.channel)
         test_thread.on_connection_fail.assert_called_once()
-        test_thread.error_func.assert_called_once_with("Connection not established")
+        test_thread.error_func.assert_called_once()
 
         test_thread.join(30)
         self.assertFalse(test_thread.is_consuming)

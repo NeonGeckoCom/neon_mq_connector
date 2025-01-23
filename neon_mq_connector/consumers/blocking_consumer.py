@@ -28,7 +28,7 @@
 
 
 import threading
-from typing import Optional
+from typing import Optional, Callable
 
 import pika.exceptions
 from ovos_utils import LOG
@@ -46,7 +46,9 @@ class BlockingConsumerThread(threading.Thread):
     def __init__(self, connection_params: pika.ConnectionParameters,
                  queue: str,
                  callback_func: callable,
-                 error_func: callable = consumer_utils.default_error_handler,
+                 error_func: Callable[
+                     ['BlockingConsumerThread', Exception],
+                     None] = consumer_utils.default_error_handler,
                  auto_ack: bool = True,
                  queue_reset: bool = False,
                  queue_exclusive: bool = False,

@@ -30,7 +30,7 @@ import threading
 import pika.exceptions
 
 from asyncio import Event, get_event_loop, set_event_loop, new_event_loop
-from typing import Optional
+from typing import Optional, Callable
 from ovos_utils import LOG
 from pika.channel import Channel
 from pika.exchange_type import ExchangeType
@@ -48,7 +48,9 @@ class SelectConsumerThread(threading.Thread):
                  connection_params: pika.ConnectionParameters,
                  queue: str,
                  callback_func: callable,
-                 error_func: callable = consumer_utils.default_error_handler,
+                 error_func: Callable[
+                     ['SelectConsumerThread', Exception],
+                     None] = consumer_utils.default_error_handler,
                  auto_ack: bool = True,
                  queue_reset: bool = False,
                  queue_exclusive: bool = False,
@@ -122,8 +124,9 @@ class SelectConsumerThread(threading.Thread):
         """ Called when connection to RabbitMQ fails"""
         self.connection_failed_attempts += 1
         if self.connection_failed_attempts > self.max_connection_failed_attempts:
-            LOG.error(f'Failed establish MQ connection after {self.connection_failed_attempts} attempts')
-            self.error_func(self, "Connection not established")
+            LOG.error(f'Failed establish MQ connection after '
+                      f'{self.connection_failed_attempts} attempts')
+            self.error_func(self, ConnectionError("Connection not established"))
             self._close_connection(mark_consumer_as_dead=True)
         else:
             self.reconnect()
