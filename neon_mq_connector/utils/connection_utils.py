@@ -187,7 +187,7 @@ def check_rmq_is_available(
         success = True
     except AMQPConnectionError as e:
         if isinstance(e, IncompatibleProtocolError):
-            LOG.warning(f"RMQ is likely still starting up (e={e})")
+            LOG.debug(f"RMQ is likely still starting up (e={e})")
         else:
             raise e
     finally:
