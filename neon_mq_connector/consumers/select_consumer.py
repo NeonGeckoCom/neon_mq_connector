@@ -25,13 +25,12 @@
 # LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
 # NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 # SOFTWARE,  EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
 import threading
-import time
+import pika.exceptions
 
 from asyncio import Event, get_event_loop, set_event_loop, new_event_loop
 from typing import Optional
-
-import pika.exceptions
 from ovos_utils import LOG
 from pika.channel import Channel
 from pika.exchange_type import ExchangeType
@@ -119,32 +118,15 @@ class SelectConsumerThread(threading.Thread):
         """Called when we are fully connected to RabbitMQ"""
         self.connection.channel(on_open_callback=self.on_channel_open)
 
-    def on_connection_fail(self, connection: pika.SelectConnection,
-                           error: pika.exceptions.AMQPConnectionError):
-        """
-        Called when connection to RabbitMQ fails
-        @param error: Error message describing reason for connection error
-        """
-        if isinstance(error, pika.exceptions.IncompatibleProtocolError):
-            LOG.warning(f"Reported incompatible protocol. RMQ is likely not "
-                        f"yet ready")
-            time.sleep(10)
-        elif isinstance(error,
-                        (pika.exceptions.AuthenticationError,
-                         pika.exceptions.ProbableAuthenticationError)):
-            self.error_func(f"Authentication error: {error}")
-            self._close_connection(mark_consumer_as_dead=True)
-            return
-        else:
-            LOG.error(f"Connection failed with: {error.__class__}-{error}")
+    def on_connection_fail(self, *_, **__):
+        """ Called when connection to RabbitMQ fails"""
         self.connection_failed_attempts += 1
         if self.connection_failed_attempts > self.max_connection_failed_attempts:
-            LOG.error(f'Failed to establish MQ connection after '
-                      f'{self.connection_failed_attempts} attempts')
-            self.error_func("Connection not established")
+            LOG.error(f'Failed establish MQ connection after {self.connection_failed_attempts} attempts')
+            self.error_func(self, "Connection not established")
             self._close_connection(mark_consumer_as_dead=True)
         else:
-            self.reconnect(5)
+            self.reconnect()
 
     def on_channel_open(self, new_channel: Channel):
         """Called when our channel has opened"""
@@ -223,7 +205,7 @@ class SelectConsumerThread(threading.Thread):
         if not self._stopping:
             # Connection was gracefully closed by the server. Try to re-connect
             LOG.info(f"Trying to reconnect after server closed connection")
-            self.reconnect(5)
+            self.reconnect()
 
     @property
     def is_consumer_alive(self) -> bool:
@@ -286,11 +268,9 @@ class SelectConsumerThread(threading.Thread):
         else:
             self._stopping = False
 
-    def reconnect(self, wait_interval: int = 0):
+    def reconnect(self, wait_interval: int = 5):
         self._close_connection(mark_consumer_as_dead=False)
-        # TODO: Find a better way to wait for shutdown/server restart. This will
-        #   fail to reconnect if the server isn't back up within `wait_interval`
-        time.sleep(wait_interval)
+        threading.Event().wait(wait_interval)
         self.run()
 
     def join(self, timeout: Optional[float] = None) -> None:
