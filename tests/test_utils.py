@@ -258,6 +258,10 @@ class TestMQConnectionUtils(unittest.TestCase):
         self.assertTrue(wait_for_mq_startup("mq.neonaiservices.com", 5672))
         self.assertFalse(wait_for_mq_startup("www.neon.ai", 5672, 1))
 
+    def test_check_rmq_is_available(self):
+        from neon_mq_connector.utils.connection_utils import check_rmq_is_available
+        # TODO
+
 
 class TestConsumerUtils(unittest.TestCase):
     def test_default_error_handler(self):

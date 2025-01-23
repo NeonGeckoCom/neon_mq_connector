@@ -177,6 +177,11 @@ def wait_for_mq_startup(addr: str, port: int, timeout: int = 60,
 
 def check_rmq_is_available(
         connection_params: Optional[ConnectionParameters]) -> bool:
+    """
+    Check if an RMQ broker is accessible at the specified Connection
+    :param connection_params: ConnectionParameters object to try and connect to
+    :return: True if the requested connection is successful, else False
+    """
     pika_log = logging.getLogger("pika")
     pika_level = pika_log.getEffectiveLevel()
     success = False
