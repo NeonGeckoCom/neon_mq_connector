@@ -25,13 +25,12 @@
 # LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
 # NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 # SOFTWARE,  EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
 import threading
-import time
+import pika.exceptions
 
 from asyncio import Event, get_event_loop, set_event_loop, new_event_loop
-from typing import Optional
-
-import pika.exceptions
+from typing import Optional, Callable
 from ovos_utils import LOG
 from pika.channel import Channel
 from pika.exchange_type import ExchangeType
@@ -49,7 +48,9 @@ class SelectConsumerThread(threading.Thread):
                  connection_params: pika.ConnectionParameters,
                  queue: str,
                  callback_func: callable,
-                 error_func: callable = consumer_utils.default_error_handler,
+                 error_func: Callable[
+                     ['SelectConsumerThread', Exception],
+                     None] = consumer_utils.default_error_handler,
                  auto_ack: bool = True,
                  queue_reset: bool = False,
                  queue_exclusive: bool = False,
@@ -123,8 +124,9 @@ class SelectConsumerThread(threading.Thread):
         """ Called when connection to RabbitMQ fails"""
         self.connection_failed_attempts += 1
         if self.connection_failed_attempts > self.max_connection_failed_attempts:
-            LOG.error(f'Failed establish MQ connection after {self.connection_failed_attempts} attempts')
-            self.error_func("Connection not established")
+            LOG.error(f'Failed establish MQ connection after '
+                      f'{self.connection_failed_attempts} attempts')
+            self.error_func(self, ConnectionError("Connection not established"))
             self._close_connection(mark_consumer_as_dead=True)
         else:
             self.reconnect()
@@ -142,7 +144,7 @@ class SelectConsumerThread(threading.Thread):
         self._consumer_started.set()
 
     def on_channel_close(self, *_, **__):
-        LOG.info(f"Channel closed.")
+        LOG.debug(f"Channel closed.")
         self._channel_closed.set()
 
     def declare_queue(self, _unused_frame: Optional[Method] = None):
@@ -249,13 +251,13 @@ class SelectConsumerThread(threading.Thread):
                 if not self._channel_closed.wait(15):
                     raise TimeoutError(f"Timeout waiting for channel close. "
                                        f"is_closed={self.channel.is_closed}")
-                LOG.info(f"Channel closed")
+                LOG.debug(f"Channel closed")
 
                 # Wait for the connection to close
                 waiter = threading.Event()
                 while not self.connection.is_closed:
                     waiter.wait(1)
-                LOG.info(f"Connection closed")
+                LOG.debug(f"Connection closed")  # Logged in `on_channel_close`
 
             if self.connection:
                 self.connection.ioloop.stop()
@@ -271,9 +273,7 @@ class SelectConsumerThread(threading.Thread):
 
     def reconnect(self, wait_interval: int = 5):
         self._close_connection(mark_consumer_as_dead=False)
-        # TODO: Find a better way to wait for shutdown/server restart. This will
-        #   fail to reconnect if the server isn't back up within `wait_interval`
-        time.sleep(wait_interval)
+        threading.Event().wait(wait_interval)
         self.run()
 
     def join(self, timeout: Optional[float] = None) -> None:

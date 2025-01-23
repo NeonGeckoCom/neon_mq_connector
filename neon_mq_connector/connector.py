@@ -636,7 +636,9 @@ class MQConnector(ABC):
         """
         host = self.config.get('server', 'localhost')
         port = int(self.config.get('port', '5672'))
-        if not wait_for_mq_startup(host, port, kwargs.get('mq_timeout', 10)):
+        if not wait_for_mq_startup(host, port, kwargs.get('mq_timeout', 120),
+                                   connection_params=self.get_connection_params(
+                                       self.vhost)):
             raise ConnectionError(f"Failed to connect to MQ at {host}:{port}")
         kwargs.setdefault('consumer_names', ())
         kwargs.setdefault('daemonize_consumers', False)

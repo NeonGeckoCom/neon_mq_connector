@@ -25,10 +25,16 @@
 # LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
 # NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 # SOFTWARE,  EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-
+import logging
 import time
-from typing import Union, Callable
+from asyncio import IncompleteReadError
+from threading import Event
+from typing import Union, Callable, Optional
 from ovos_utils.log import LOG
+from pika.adapters.blocking_connection import BlockingConnection
+from pika.adapters.utils.connection_workflow import AMQPConnectionWorkflowFailed, AMQPConnectorException
+from pika.connection import ConnectionParameters
+from pika.exceptions import AMQPConnectionError, IncompatibleProtocolError
 
 from neon_mq_connector.utils.network_utils import check_port_is_open
 
@@ -136,7 +142,9 @@ def retry(callback_on_exceeded: Union[str, Callable] = None,
     return decorator
 
 
-def wait_for_mq_startup(addr: str, port: int, timeout: int = 60) -> bool:
+def wait_for_mq_startup(addr: str, port: int, timeout: int = 60,
+                        connection_params: Optional[ConnectionParameters] = None
+                        ) -> bool:
     """
     Wait up to `timeout` seconds for the MQ connection at `addr`:`port`
     to come online.
@@ -148,7 +156,45 @@ def wait_for_mq_startup(addr: str, port: int, timeout: int = 60) -> bool:
     LOG.debug(f"Waiting for MQ server at {addr}:{port} to come online")
     while not check_port_is_open(addr, port):
         if time.time() > stop_time:
-            LOG.warning(f"Timed out waiting after {timeout}s")
+            LOG.warning(f"Timed out waiting for port to open after {timeout}s")
             return False
+    LOG.info("Waiting for RMQ broker to load")
+    if connection_params:
+        waiter = Event()
+        rmq_ready = True
+        while not check_rmq_is_available(connection_params):
+            rmq_ready = False
+            if time.time() > stop_time:
+                LOG.warning(f"Timed out waiting for RMQ after {timeout}s")
+                return False
+            waiter.wait(5)
+        if not rmq_ready:
+            LOG.info("MQ just started. Wait some time for queues, etc. to load")
+            waiter.wait(15)
     LOG.info("MQ Server Started")
     return True
+
+
+def check_rmq_is_available(
+        connection_params: Optional[ConnectionParameters]) -> bool:
+    """
+    Check if an RMQ broker is accessible at the specified Connection
+    :param connection_params: ConnectionParameters object to try and connect to
+    :return: True if the requested connection is successful, else False
+    """
+    pika_log = logging.getLogger("pika")
+    pika_level = pika_log.getEffectiveLevel()
+    success = False
+    try:
+        pika_log.setLevel(logging.CRITICAL)
+        connection = BlockingConnection(connection_params)
+        connection.close()
+        success = True
+    except AMQPConnectionError as e:
+        if isinstance(e, IncompatibleProtocolError):
+            LOG.debug(f"RMQ is likely still starting up (e={e})")
+        else:
+            raise e
+    finally:
+        pika_log.setLevel(pika_level)
+        return success
