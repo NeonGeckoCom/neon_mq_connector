@@ -82,7 +82,7 @@ class SelectConsumerThread(threading.Thread):
             self._loop = get_event_loop()
             self.__stop_loop_on_exit = False
         except RuntimeError as e:
-            LOG.info(e)
+            LOG.info(f"Creating a new event loop: e={e}")
             self._loop = new_event_loop()
             set_event_loop(self._loop)
             self._loop.run_forever()
