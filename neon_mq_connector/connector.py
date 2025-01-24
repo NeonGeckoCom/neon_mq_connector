@@ -109,7 +109,7 @@ class MQConnector(ABC):
         self._vhost = None
         self._sync_thread = None
         self._observer_thread = None
-        self._started = False
+        self._consumers_started = False
 
         # Define properties and initialize them
         self.sync_period = 0
@@ -122,7 +122,7 @@ class MQConnector(ABC):
 
     @property
     def started(self):
-        return self._started
+        return self._consumers_started
 
     @property
     def config(self):
@@ -653,7 +653,7 @@ class MQConnector(ABC):
         if run_observer:
             self.observer_thread.start()
         self.post_run(**kwargs)
-        self._started = True
+        self._consumers_started = True
 
     @property
     def sync_thread(self) -> RepeatingTimer:
@@ -706,7 +706,7 @@ class MQConnector(ABC):
         self.stop_consumers()
         self.stop_sync_thread()
         self.stop_observer_thread()
-        self._started = False
+        self._consumers_started = False
         LOG.info(f"Stopped Connector {self.service_name}")
 
     def pre_run(self, **kwargs):
