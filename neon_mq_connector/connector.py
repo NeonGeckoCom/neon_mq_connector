@@ -576,6 +576,7 @@ class MQConnector(ABC):
                 self.consumers[name].daemon = daemon
                 self.consumers[name].start()
                 self.consumer_properties[name]['started'] = True
+        LOG.debug(f"Started consumers for {self.service_name}")
 
     def stop_consumers(self, names: Optional[tuple] = None):
         """
@@ -596,6 +597,7 @@ class MQConnector(ABC):
                     self.consumer_properties[name]['started'] = False
             except Exception as e:
                 raise ChildProcessError(e)
+        LOG.debug(f"Stopped consumers for {self.service_name}")
 
     @retry(callback_on_exceeded='stop_sync_thread', use_self=True,
            num_retries=__run_retries__)
@@ -705,6 +707,7 @@ class MQConnector(ABC):
         self.stop_sync_thread()
         self.stop_observer_thread()
         self._started = False
+        LOG.info(f"Stopped Connector {self.service_name}")
 
     def pre_run(self, **kwargs):
         """Additional logic invoked before method run()"""

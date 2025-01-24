@@ -27,14 +27,13 @@
 # SOFTWARE,  EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 import logging
 import time
-from asyncio import IncompleteReadError
+
 from threading import Event
 from typing import Union, Callable, Optional
 from ovos_utils.log import LOG
 from pika.adapters.blocking_connection import BlockingConnection
-from pika.adapters.utils.connection_workflow import AMQPConnectionWorkflowFailed, AMQPConnectorException
 from pika.connection import ConnectionParameters
-from pika.exceptions import AMQPConnectionError, IncompatibleProtocolError
+from pika.exceptions import IncompatibleProtocolError, ProbableAccessDeniedError
 
 from neon_mq_connector.utils.network_utils import check_port_is_open
 
@@ -190,11 +189,15 @@ def check_rmq_is_available(
         connection = BlockingConnection(connection_params)
         connection.close()
         success = True
-    except AMQPConnectionError as e:
-        if isinstance(e, IncompatibleProtocolError):
-            LOG.debug(f"RMQ is likely still starting up (e={e})")
+    except IncompatibleProtocolError as e:
+        LOG.debug(f"RMQ is likely still starting up (e={e})")
+    except ProbableAccessDeniedError as e:
+        if connection_params.virtual_host == '/':
+            LOG.warning(f"Access was denied to default vhost='/'. Assuming RMQ "
+                        f"broker is online.")
+            success = True
         else:
             raise e
     finally:
         pika_log.setLevel(pika_level)
-        return success
+    return success
