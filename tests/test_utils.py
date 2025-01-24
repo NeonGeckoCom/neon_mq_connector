@@ -35,7 +35,9 @@ from unittest.mock import Mock
 import pytest
 import pika
 
-from threading import Thread, Event
+from threading import Thread
+
+from pika.exceptions import ProbableAuthenticationError
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
@@ -208,11 +210,22 @@ class TestClientUtils(unittest.TestCase):
         self.assertTrue(connector.connection.is_closed)
 
 
+@pytest.mark.usefixtures("rmq_instance")
 class TestMQConnectionUtils(unittest.TestCase):
+    test_conf = None
     counter = 0
 
     def setUp(self) -> None:
         self.counter = 0
+
+        if self.test_conf is None:
+            self.test_conf = {
+                "server": "localhost",
+                "port": self.rmq_instance.port,
+                "users": {"mq_handler": {"user": "test_user",
+                                         "password": "test_password"}}}
+            import neon_mq_connector.utils.client_utils
+            neon_mq_connector.utils.client_utils._default_mq_config = self.test_conf
 
     def repeating_method(self):
         """Simple method incrementing counter by one"""
@@ -260,7 +273,43 @@ class TestMQConnectionUtils(unittest.TestCase):
 
     def test_check_rmq_is_available(self):
         from neon_mq_connector.utils.connection_utils import check_rmq_is_available
-        # TODO
+        from pika.exceptions import ProbableAccessDeniedError
+        from pika.credentials import PlainCredentials
+        from pika.connection import ConnectionParameters
+
+        valid_vhost = "/neon_testing"
+        invalid_vhost = "/mock_vhost"
+        base_connection_kwargs = {"host": self.test_conf['server'],
+                                  "port": self.test_conf['port']}
+
+        valid_creds = PlainCredentials("test_user",
+                                       "test_password")
+        invalid_creds = PlainCredentials("test_user",
+                                         "invalid_password")
+
+        valid_connection = ConnectionParameters(**base_connection_kwargs,
+                                                virtual_host=valid_vhost,
+                                                credentials=valid_creds)
+        self.assertTrue(check_rmq_is_available(valid_connection))
+
+        invalid_bad_vhost = ConnectionParameters(**base_connection_kwargs,
+                                                 virtual_host=invalid_vhost,
+                                                 credentials=valid_creds)
+        with self.assertRaises(ProbableAccessDeniedError):
+            self.assertFalse(check_rmq_is_available(invalid_bad_vhost))
+
+        invalid_bad_creds = ConnectionParameters(**base_connection_kwargs,
+                                                 virtual_host=valid_vhost,
+                                                 credentials=invalid_creds)
+        with self.assertRaises(ProbableAuthenticationError):
+            self.assertFalse(check_rmq_is_available(invalid_bad_creds))
+
+        # If the calling service doesn't specify a `vhost`, allow it to start
+        # anyway (i.e. klat-observer)
+        invalid_default_vhost = ConnectionParameters(**base_connection_kwargs,
+                                                     virtual_host='/',
+                                                     credentials=valid_creds)
+        self.assertTrue(check_rmq_is_available(invalid_default_vhost))
 
 
 class TestConsumerUtils(unittest.TestCase):
