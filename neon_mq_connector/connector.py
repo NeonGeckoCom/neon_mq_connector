@@ -303,9 +303,10 @@ class MQConnector(ABC):
             raise ValueError(f'No request data provided')
 
         # Ensure `message_id` in data will match context in messagebus connector
-        request_data.setdefault('message_id', request_data.get("context", {})
-                                .get("mq", {}).get("message_id") or
-                                cls.create_unique_id())
+        if request_data.get('message_id') is None:
+            request_data['message_id'] = \
+                request_data.get("context", {}).get("mq", {}).get("message_id")\
+                or cls.create_unique_id()
 
         def _on_channel_open(new_channel):
             if exchange:

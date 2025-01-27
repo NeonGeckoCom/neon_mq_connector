@@ -445,13 +445,30 @@ class TestMQConnectorInit(unittest.TestCase):
         on_open.assert_called_once()
         message_id_2 = connector.emit_mq_message(async_connection,
                                                  request_data, queue=test_queue)
-        self.assertIsInstance(message_id, str)
+        self.assertIsInstance(message_id_2, str)
         self.assertNotEqual(message_id, message_id_2)
         callback_event.wait(timeout=5)
         self.assertTrue(callback_event.is_set())
         callback.assert_called_once()
         self.assertEqual(b64_to_dict(callback.call_args.args[3]),
                          {**request_data, "message_id": message_id_2})
+        callback.reset_mock()
+        callback_event.clear()
+
+        # message_id set to `None`
+        message_id_3 = connector.emit_mq_message(async_connection,
+                                                 {**request_data,
+                                                  "message_id": None},
+                                                 queue=test_queue)
+        self.assertIsInstance(message_id_3, str)
+        self.assertNotEqual("", message_id_3)
+        callback_event.wait(timeout=5)
+        self.assertTrue(callback_event.is_set())
+        callback.assert_called_once()
+        self.assertEqual(b64_to_dict(callback.call_args.args[3]),
+                         {**request_data, "message_id": message_id_3})
+        callback.reset_mock()
+        callback_event.clear()
 
         on_close.assert_not_called()
         connector.stop()
