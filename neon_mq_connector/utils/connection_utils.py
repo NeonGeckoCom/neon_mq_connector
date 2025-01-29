@@ -127,6 +127,7 @@ def retry(callback_on_exceeded: Union[str, Callable] = None,
                     sleep_timeout = get_timeout(backoff_factor=backoff_factor,
                                                 number_of_retries=num_attempts)
                     LOG.warning(f'{error_body}: {e}.')
+                    LOG.exception(e)
                     LOG.info(f'Timeout for {sleep_timeout} secs')
                     num_attempts += 1
                     time.sleep(sleep_timeout)
