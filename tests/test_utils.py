@@ -54,9 +54,11 @@ from .fixtures import rmq_instance
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 TEST_PATH = os.path.join(ROOT_DIR, "tests", "ccl_files")
 
-INPUT_CHANNEL = str(time.time())
-INPUT_HANDLED_CHANNEL = INPUT_CHANNEL + "_handled"
-OUTPUT_CHANNEL = str(time.time())
+RANDOM_STR = str(int(time.time()))
+
+INPUT_CHANNEL_A = RANDOM_STR + '_a'
+INPUT_CHANNEL_B = RANDOM_STR + '_b'
+OUTPUT_CHANNEL = RANDOM_STR + '_output'
 
 TEST_DICT = {b"section 1": {"key1": "val1",
                             "key2": "val2"},
@@ -123,7 +125,7 @@ class SimpleMQConnector(MQConnector):
         channel.basic_ack(delivery_tag=method.delivery_tag)
 
     @create_mq_callback
-    def respond_handled(self, body: dict):
+    def respond_wrapped(self, body: dict):
         return {
             "message_id": body["message_id"],
             "success": True,
@@ -151,13 +153,13 @@ class TestClientUtils(unittest.TestCase):
                                                     vhost=vhost)
             self.test_connector.register_consumer("neon_utils_test",
                                                   vhost,
-                                                  INPUT_CHANNEL,
+                                                  INPUT_CHANNEL_A,
                                                   self.test_connector.respond,
                                                   auto_ack=False)
-            self.test_connector.register_consumer("neon_utils_test_handled",
+            self.test_connector.register_consumer("neon_utils_test_wrapped",
                                                   vhost,
-                                                  INPUT_HANDLED_CHANNEL,
-                                                  self.test_connector.respond_handled,
+                                                  INPUT_CHANNEL_B,
+                                                  self.test_connector.respond_wrapped,
                                                   auto_ack=False)
             self.test_connector.run_consumers()
 
@@ -169,7 +171,7 @@ class TestClientUtils(unittest.TestCase):
     def test_send_mq_request_valid(self):
         from neon_mq_connector.utils.client_utils import send_mq_request
         request = {"data": time.time()}
-        response = send_mq_request("/neon_testing", request, INPUT_CHANNEL)
+        response = send_mq_request("/neon_testing", request, INPUT_CHANNEL_A)
         self.assertIsInstance(response, dict)
         self.assertTrue(response["success"])
         self.assertEqual(response["request_data"], request["data"])
@@ -178,16 +180,16 @@ class TestClientUtils(unittest.TestCase):
         from neon_mq_connector.utils.client_utils import send_mq_request
         request = {"data": time.time()}
         response = send_mq_request("/neon_testing", request,
-                                   INPUT_CHANNEL, OUTPUT_CHANNEL)
+                                   INPUT_CHANNEL_A, OUTPUT_CHANNEL)
         self.assertIsInstance(response, dict)
         self.assertTrue(response["success"])
         self.assertEqual(response["request_data"], request["data"])
 
-    def test_send_mq_request_response_handled_by_create_mq_request_decorator(self):
+    def test_send_mq_request_response_emit_handled_by_create_mq_request_decorator(self):
         from neon_mq_connector.utils.client_utils import send_mq_request
 
         request = {"data": time.time()}
-        response = send_mq_request("/neon_testing", request, INPUT_HANDLED_CHANNEL)
+        response = send_mq_request("/neon_testing", request, INPUT_CHANNEL_B)
         self.assertIsInstance(response, dict)
         self.assertTrue(response["success"])
         self.assertEqual(response["request_data"], request["data"])
@@ -199,7 +201,7 @@ class TestClientUtils(unittest.TestCase):
 
         def check_response(name: str):
             request = {"data": time.time()}
-            response = send_mq_request("/neon_testing", request, INPUT_CHANNEL)
+            response = send_mq_request("/neon_testing", request, INPUT_CHANNEL_A)
             self.assertIsInstance(response, dict)
             if not isinstance(response, dict):
                 responses[name] = {'success': False,
@@ -379,7 +381,8 @@ class TestNetworkUtils(unittest.TestCase):
 
 class TestRabbitUtils(unittest.TestCase):
 
-    def create_mock_request(self, body, **kwargs):
+    @staticmethod
+    def create_mock_request(body):
         return {
             "channel": Mock(),
             "method": Mock(),
