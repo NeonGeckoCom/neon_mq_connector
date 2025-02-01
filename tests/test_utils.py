@@ -77,16 +77,16 @@ class MqCallbackDecoratorClass:
     def __init__(self):
         self.callback = Mock()
 
-    @create_mq_callback()
+    @create_mq_callback
     def default_callback(self, body):
         self.callback(body)
 
-    @create_mq_callback(())
+    @create_mq_callback(include_callback_props=())
     def no_kwargs_callback(self, **kwargs):
         self.callback(**kwargs)
 
     @staticmethod
-    @create_mq_callback()
+    @create_mq_callback
     def static_callback(body):
         MqCallbackDecoratorClass.class_callback(body)
 
@@ -359,11 +359,11 @@ class TestRabbitUtils(unittest.TestCase):
         def default_handler_kwargs(**kwargs):
             callback(**kwargs)
 
-        @create_mq_callback(('body', 'method'))
+        @create_mq_callback(include_callback_props=('body', 'method'))
         def extra_kwargs_handler(**kwargs):
             callback(**kwargs)
 
-        @create_mq_callback(())
+        @create_mq_callback(include_callback_props=())
         def no_kwargs_handler(**kwargs):
             callback(**kwargs)
 
