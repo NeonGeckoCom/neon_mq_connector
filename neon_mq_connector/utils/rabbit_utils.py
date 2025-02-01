@@ -28,12 +28,32 @@
 import inspect
 
 from functools import wraps
+from typing import Optional, Type, Callable, Any, Tuple
+
+import pika.channel
+
 from ovos_utils.log import LOG
+from pydantic import BaseModel, ValidationError
 
 from neon_mq_connector.utils.network_utils import b64_to_dict
 
 
-def create_mq_callback(include_callback_props: tuple = ('body',)):
+def create_mq_callback(
+    callback: Optional[
+        Callable[
+            [
+                pika.channel.Channel,
+                pika.spec.Basic.Deliver,
+                pika.spec.BasicProperties,
+                bytes,
+            ],
+            Any
+        ]
+    ] = None,
+    *,
+    include_callback_props: Tuple[str] = ('body',),
+    request_model: Optional[Type[BaseModel]] = None,
+):
     """
     Creates MQ callback method by filtering relevant MQ attributes. Use this
     decorator to simplify creation of MQ callbacks.
@@ -41,7 +61,17 @@ def create_mq_callback(include_callback_props: tuple = ('body',)):
     Note that the consumer must have `auto_ack=True` specified at registration
     if the decorated function does not accept `channel` and `method` kwargs that
     are required to acknowledge a message.
+
+    :param callback: callable to wrap into this decorator
+    :param include_callback_props: tuple of `pika` callback arguments to include (defaults to ('body',))
+    :param request_model: pydantic request model to convert received body to
     """
+
+    if callback and callable(callback):  # No arguments passed, used directly
+        return create_mq_callback(
+            include_callback_props=include_callback_props,
+            request_model=request_model,
+        )(callback)
 
     if not include_callback_props:
         include_callback_props = ()
@@ -63,6 +93,8 @@ def create_mq_callback(include_callback_props: tuple = ('body',)):
                         else:
                             raise TypeError(f'Invalid body received, expected: '
                                             f'bytes string; got: {type(value)}')
+                        if request_model:
+                            callback_kwargs['body'] = request_model.model_validate(callback_kwargs['body'])
                     else:
                         callback_kwargs[mq_props[idx]] = value
             return callback_kwargs
@@ -70,7 +102,23 @@ def create_mq_callback(include_callback_props: tuple = ('body',)):
         @wraps(f)
         def wrapped_classmethod(self, *f_args):
             try:
-                res = f(self, **_parse_kwargs(*f_args))
+                parsed_request_kwargs = _parse_kwargs(*f_args)
+                res = f(self, **parsed_request_kwargs)
+
+                routing_key = parsed_request_kwargs.get('body', {}).get('routing_key')
+                message_id = parsed_request_kwargs.get('body', {}).get('message_id')
+
+                if routing_key and res and isinstance(res, dict):
+                    res.setdefault("context", {}).setdefault("mq", {}).setdefault("message_id", message_id)
+                    self.send_message(
+                        request_data=res,
+                        vhost=res.pop('vhost', self.vhost),
+                        queue=routing_key,
+                    )
+            except ValidationError as val_err:
+                LOG.error(f'Validation error when parsing request data of {f.__name__} failed due to '
+                          f'error={val_err}')
+                res = None
             except Exception as ex:
                 LOG.error(f'Execution of {f.__name__} failed due to '
                           f'exception={ex}')
@@ -81,6 +129,10 @@ def create_mq_callback(include_callback_props: tuple = ('body',)):
         def wrapped(*f_args):
             try:
                 res = f(**_parse_kwargs(*f_args))
+            except ValidationError as val_err:
+                LOG.error(f'Validation error when parsing request data of {f.__name__} failed due to '
+                          f'error={val_err}')
+                res = None
             except Exception as ex:
                 LOG.error(f'Execution of {f.__name__} failed due to '
                           f'exception={ex}')
