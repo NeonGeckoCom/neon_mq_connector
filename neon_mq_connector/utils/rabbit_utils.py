@@ -94,7 +94,9 @@ def create_mq_callback(
                             raise TypeError(f'Invalid body received, expected: '
                                             f'bytes string; got: {type(value)}')
                         if request_model:
-                            callback_kwargs['body'] = request_model.model_validate(callback_kwargs['body'])
+                            callback_kwargs['body'] = request_model.model_validate(
+                                obj=callback_kwargs['body'],
+                            )
                     else:
                         callback_kwargs[mq_props[idx]] = value
             return callback_kwargs
@@ -105,8 +107,12 @@ def create_mq_callback(
                 parsed_request_kwargs = _parse_kwargs(*f_args)
                 res = f(self, **parsed_request_kwargs)
 
-                routing_key = parsed_request_kwargs.get('body', {}).get('routing_key')
-                message_id = parsed_request_kwargs.get('body', {}).get('message_id')
+                body = parsed_request_kwargs.get('body') or {}
+                if isinstance(body, BaseModel):
+                    body = body.model_dump()
+
+                routing_key = body.get('routing_key')
+                message_id = body.get('message_id')
 
                 if routing_key and res and isinstance(res, dict):
                     res.setdefault("context", {}).setdefault("mq", {}).setdefault("message_id", message_id)
