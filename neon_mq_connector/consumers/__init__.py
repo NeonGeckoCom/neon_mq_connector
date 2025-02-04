@@ -26,12 +26,11 @@
 # NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 # SOFTWARE,  EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-from threading import Timer
 
+__all__ = [
+    'BlockingConsumerThread',
+    'SelectConsumerThread',
+]
 
-class RepeatingTimer(Timer):
-    """Timer thread that repeats calling function every self.interval seconds"""
-    def run(self):
-        """thread run function"""
-        while not self.finished.wait(self.interval):
-            self.function(*self.args, **self.kwargs)
+from neon_mq_connector.consumers.select_consumer import SelectConsumerThread
+from neon_mq_connector.consumers.blocking_consumer import BlockingConsumerThread

@@ -1,6 +1,6 @@
 # NEON AI (TM) SOFTWARE, Software Development Kit & Application Framework
 # All trademark and other rights reserved by their respective owners
-# Copyright 2008-2022 Neongecko.com Inc.
+# Copyright 2008-2025 Neongecko.com Inc.
 # Contributors: Daniel McKnight, Guy Daniels, Elon Gasper, Richard Leeds,
 # Regina Bloomstine, Casimiro Ferreira, Andrii Pernatii, Kirill Hrymailo
 # BSD-3 License
@@ -25,10 +25,15 @@
 # LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
 # NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 # SOFTWARE,  EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-
+import logging
 import time
-from typing import Union, Callable
+
+from threading import Event
+from typing import Union, Callable, Optional
 from ovos_utils.log import LOG
+from pika.adapters.blocking_connection import BlockingConnection
+from pika.connection import ConnectionParameters
+from pika.exceptions import IncompatibleProtocolError, ProbableAccessDeniedError
 
 from neon_mq_connector.utils.network_utils import check_port_is_open
 
@@ -136,7 +141,9 @@ def retry(callback_on_exceeded: Union[str, Callable] = None,
     return decorator
 
 
-def wait_for_mq_startup(addr: str, port: int, timeout: int = 60) -> bool:
+def wait_for_mq_startup(addr: str, port: int, timeout: int = 60,
+                        connection_params: Optional[ConnectionParameters] = None
+                        ) -> bool:
     """
     Wait up to `timeout` seconds for the MQ connection at `addr`:`port`
     to come online.
@@ -148,7 +155,49 @@ def wait_for_mq_startup(addr: str, port: int, timeout: int = 60) -> bool:
     LOG.debug(f"Waiting for MQ server at {addr}:{port} to come online")
     while not check_port_is_open(addr, port):
         if time.time() > stop_time:
-            LOG.warning(f"Timed out waiting after {timeout}s")
+            LOG.warning(f"Timed out waiting for port to open after {timeout}s")
             return False
+    LOG.info("Waiting for RMQ broker to load")
+    if connection_params:
+        waiter = Event()
+        rmq_ready = True
+        while not check_rmq_is_available(connection_params):
+            rmq_ready = False
+            if time.time() > stop_time:
+                LOG.warning(f"Timed out waiting for RMQ after {timeout}s")
+                return False
+            waiter.wait(5)
+        if not rmq_ready:
+            LOG.info("MQ just started. Wait some time for queues, etc. to load")
+            waiter.wait(15)
     LOG.info("MQ Server Started")
     return True
+
+
+def check_rmq_is_available(
+        connection_params: Optional[ConnectionParameters]) -> bool:
+    """
+    Check if an RMQ broker is accessible at the specified Connection
+    :param connection_params: ConnectionParameters object to try and connect to
+    :return: True if the requested connection is successful, else False
+    """
+    pika_log = logging.getLogger("pika")
+    pika_level = pika_log.getEffectiveLevel()
+    success = False
+    try:
+        pika_log.setLevel(logging.CRITICAL)
+        connection = BlockingConnection(connection_params)
+        connection.close()
+        success = True
+    except IncompatibleProtocolError as e:
+        LOG.debug(f"RMQ is likely still starting up (e={e})")
+    except ProbableAccessDeniedError as e:
+        if connection_params.virtual_host == '/':
+            LOG.warning(f"Access was denied to default vhost='/'. Assuming RMQ "
+                        f"broker is online.")
+            success = True
+        else:
+            raise e
+    finally:
+        pika_log.setLevel(pika_level)
+    return success

@@ -26,12 +26,15 @@
 # NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 # SOFTWARE,  EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-from threading import Timer
+
+from ovos_utils.log import LOG
 
 
-class RepeatingTimer(Timer):
-    """Timer thread that repeats calling function every self.interval seconds"""
-    def run(self):
-        """thread run function"""
-        while not self.finished.wait(self.interval):
-            self.function(*self.args, **self.kwargs)
+def default_error_handler(*args):
+    """
+    Default handler for Consumer instances
+    :param args: list of arguments for exception handling
+    :raises Exception: raise with provided args
+    """
+    LOG.warning("Error handler not defined")
+    raise Exception(*args)

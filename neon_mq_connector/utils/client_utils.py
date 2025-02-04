@@ -1,6 +1,6 @@
 # NEON AI (TM) SOFTWARE, Software Development Kit & Application Framework
 # All trademark and other rights reserved by their respective owners
-# Copyright 2008-2022 Neongecko.com Inc.
+# Copyright 2008-2025 Neongecko.com Inc.
 # Contributors: Daniel McKnight, Guy Daniels, Elon Gasper, Richard Leeds,
 # Regina Bloomstine, Casimiro Ferreira, Andrii Pernatii, Kirill Hrymailo
 # BSD-3 License
@@ -38,7 +38,7 @@ from ovos_utils.log import LOG
 from neon_mq_connector.utils.network_utils import b64_to_dict
 
 _default_mq_config = {
-    "server": "api.neon.ai",
+    "server": "mq.neonaiservices.com",
     "port": 5672,
     "users": {
         "mq_handler": {
@@ -50,12 +50,26 @@ _default_mq_config = {
 
 
 class NeonMQHandler(MQConnector):
+    """
+    This class is intended for use with `send_mq_request` for simple,
+    transactional reqeusts. Applications needing a persistent connection to
+    MQ services should implement `MQConnector` directly.
+    """
+
+    async_consumers_enabled = False
+
     def __init__(self, config: dict, service_name: str, vhost: str):
         super().__init__(config, service_name)
         self.vhost = vhost
         import pika
         self.connection = pika.BlockingConnection(
             parameters=self.get_connection_params(vhost))
+
+    def shutdown(self):
+        MQConnector.stop(self)
+        self.connection.close()
+        if not self.connection.is_closed:
+            raise RuntimeError(f"Connection is still open: {self.connection}")
 
 
 def send_mq_request(vhost: str, request_data: dict, target_queue: str,

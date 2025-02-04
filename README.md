@@ -66,3 +66,27 @@ A response may be sent via:
                        )
 ```
 Where `<queue>` is the queue to which the response will be published, and `data` is a `bytes` response (generally a `base64`-encoded `dict`).
+
+### Asynchronous Consumers
+By default, async-based consumers handling based on `pika.SelectConnection` will
+be used
+
+#### Override use of async consumers
+
+There are a few methods to disable use of async consumers/subscribers.
+
+1. To disable async consumers for a particular class/object, 
+set the class-attribute `async_consumers_enabled` to `False`:
+
+   ```python
+   from neon_mq_connector import MQConnector
+   
+   class MQConnectorChild(MQConnector):
+      async_consumers_enabled = False
+   ```
+2. To disable the use of async consumers at runtime, set the `MQ_ASYNC_CONSUMERS`
+envvar to `False`
+
+   ```shell
+   export MQ_ASYNC_CONSUMERS=false
+   ```

@@ -4,53 +4,58 @@ on:
   workflow_dispatch:
 
 jobs:
-  unit_tests:
+  backwards_compat_tests:
     strategy:
       matrix:
-        python-version: [ 3.7, 3.8, 3.9, '3.10' ]
+        python-version: [ '3.8', '3.10']
       max-parallel: 1
     timeout-minutes: 30
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
       - name: Set up python ${{ matrix.python-version }}
-        uses: actions/setup-python@v2
+        uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install . -r requirements/test_requirements.txt
-      - name: Get Credential
-        run: |
-          mkdir -p ~/.local/share/neon
-          echo $CONNECTOR_CONFIG > ~/.local/share/neon/credentials.json
-        shell: bash
-        env:
-          CONNECTOR_CONFIG: ${{secrets.CONNECTOR_CONFIG}}
-      - name: Run Utils Tests
-        run: |
-          pytest tests/test_utils.py --doctest-modules --junitxml=tests/utils-test-results.xml
-      - name: Upload Utils test results
-        uses: actions/upload-artifact@v2
-        with:
-          name: utils-test-results
-          path: tests/utils-test-results.xml
-      - name: Run Connector Tests
-        run: |
-          pytest tests/test_connector.py --doctest-modules --junitxml=tests/connector-test-results.xml
-#        env:
-#          MQ_TESTING: 1
-      - name: Upload Connector test results
-        uses: actions/upload-artifact@v2
-        with:
-          name: connector-test-results
-          path: tests/connector-test-results.xml
       - name: Run Backward Compatibility Tests
         run: |
-          pytest tests/test_backward_compatibility.py --doctest-modules --junitxml=tests/backward-compatibility-test-results.xml
+          pytest tests/backward_compat_tests.py --doctest-modules --junitxml=tests/backward-compatibility-test-results.xml
       - name: Upload Backward Compatibility test results
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v4
         with:
-          name: backward-compatibility-test-results
+          name: backward-compatibility-test-results-${{ matrix.python-version }}
           path: tests/backward-compatibility-test-results.xml
+  unit_tests:
+    strategy:
+      matrix:
+        python-version: [ '3.8', '3.9', '3.10', '3.11', '3.12' ]
+    timeout-minutes: 30
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install apt dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y rabbitmq-server
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install . -r requirements/test_requirements.txt
+
+      - name: Run Unit Tests
+        run: |
+          pytest tests --doctest-modules --junitxml=tests/test-results.xml
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-${{ matrix.python-version }}
+          path: tests/test-results.xml

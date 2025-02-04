@@ -26,12 +26,56 @@
 # NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 # SOFTWARE,  EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-from threading import Timer
+import pytest
+
+from port_for import get_port
+from pytest_rabbitmq.factories.executor import RabbitMqExecutor
+from pytest_rabbitmq.factories.process import get_config
 
 
-class RepeatingTimer(Timer):
-    """Timer thread that repeats calling function every self.interval seconds"""
-    def run(self):
-        """thread run function"""
-        while not self.finished.wait(self.interval):
-            self.function(*self.args, **self.kwargs)
+@pytest.fixture(scope="class")
+def rmq_instance(request, tmp_path_factory):
+    config = get_config(request)
+    rabbit_ctl = config["ctl"]
+    rabbit_server = config["server"]
+    rabbit_host = "127.0.0.1"
+    rabbit_port = get_port(config["port"])
+    rabbit_distribution_port = get_port(
+        config["distribution_port"], [rabbit_port]
+    )
+    assert rabbit_distribution_port
+    assert (
+            rabbit_distribution_port != rabbit_port
+    ), "rabbit_port and distribution_port can not be the same!"
+
+    tmpdir = tmp_path_factory.mktemp(f"pytest-rabbitmq-{request.fixturename}")
+
+    rabbit_plugin_path = config["plugindir"]
+
+    rabbit_logpath = config["logsdir"]
+
+    if not rabbit_logpath:
+        rabbit_logpath = tmpdir / "logs"
+
+    rabbit_executor = RabbitMqExecutor(
+        rabbit_server,
+        rabbit_host,
+        rabbit_port,
+        rabbit_distribution_port,
+        rabbit_ctl,
+        logpath=rabbit_logpath,
+        path=tmpdir,
+        plugin_path=rabbit_plugin_path,
+        node_name=config["node"],
+    )
+
+    rabbit_executor.start()
+
+    # Init RMQ config
+    rabbit_executor.rabbitctl_output("add_user", "test_user",
+                                     "test_password")
+    rabbit_executor.rabbitctl_output("add_vhost", "/neon_testing")
+    rabbit_executor.rabbitctl_output("set_permissions", "-p",
+                                     "/neon_testing", "test_user", ".*", ".*",
+                                     ".*")
+    request.cls.rmq_instance = rabbit_executor

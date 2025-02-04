@@ -1,6 +1,6 @@
 # NEON AI (TM) SOFTWARE, Software Development Kit & Application Framework
 # All trademark and other rights reserved by their respective owners
-# Copyright 2008-2022 Neongecko.com Inc.
+# Copyright 2008-2025 Neongecko.com Inc.
 # Contributors: Daniel McKnight, Guy Daniels, Elon Gasper, Richard Leeds,
 # Regina Bloomstine, Casimiro Ferreira, Andrii Pernatii, Kirill Hrymailo
 # BSD-3 License
@@ -76,6 +76,7 @@ setup(
     zip_safe=True,
     classifiers=[
         'Intended Audience :: Developers',
-        'Programming Language :: Python :: 3.6',
-    ]
+        'Programming Language :: Python :: 3.8',
+    ],
+    python_requires = '>=3.8',
 )

@@ -1,6 +1,6 @@
 # NEON AI (TM) SOFTWARE, Software Development Kit & Application Framework
 # All trademark and other rights reserved by their respective owners
-# Copyright 2008-2022 Neongecko.com Inc.
+# Copyright 2008-2025 Neongecko.com Inc.
 # Contributors: Daniel McKnight, Guy Daniels, Elon Gasper, Richard Leeds,
 # Regina Bloomstine, Casimiro Ferreira, Andrii Pernatii, Kirill Hrymailo
 # BSD-3 License
@@ -29,9 +29,11 @@
 import os
 import unittest
 
+from parameterized import parameterized
+
 from neon_mq_connector import MQConnector
 from neon_mq_connector.config import Configuration
-from neon_mq_connector.connector import ConsumerThread
+from neon_mq_connector.consumers import SelectConsumerThread, BlockingConsumerThread
 
 
 class OldMQConnectorChild(MQConnector):
@@ -55,19 +57,39 @@ class TestBackwardCompatibility(unittest.TestCase):
                                             service_name='test')
         cls.connector.run(run_sync=False)
 
-    def test_stable_register_consumer_args(self):
-        try:
-            # Required connector.register_consumer() arguments order:
-            # name: str, vhost: str, queue: str,
-            # callback: callable, on_error: Optional[callable] = None,
-            # auto_ack: bool = True
-            self.connector.register_consumer("test_consumer",
-                                             self.connector.vhost,
-                                             'test',
-                                             self.connector.callback_func_1,
-                                             self.connector.default_error_handler,
-                                             False)
-            self.assertIsInstance(self.connector.consumers['test_consumer'], ConsumerThread)
-            self.assertEqual(self.connector.consumers['test_consumer'].queue, 'test')
-        except Exception as ex:
-            self.fail(f'Registering consumer failed: {ex}')
+    @parameterized.expand(
+        input=[
+            (
+                "async_mode_enabled",  # test name
+                True,  # async consumer flag
+                SelectConsumerThread,  # expected consumer instance
+            ),
+            (
+                "async_mode_disabled",
+                False,
+                BlockingConsumerThread,
+            )
+        ]
+    )
+    def test_stable_register_consumer_args(
+        self,
+        test_name,
+        async_mode_enabled,
+        expected_consumer_instance,
+    ):
+        self.connector.async_consumers_enabled = async_mode_enabled
+        # Required connector.register_consumer() arguments order:
+        # name: str, vhost: str, queue: str,
+        # callback: callable, on_error: Optional[callable] = None,
+        # auto_ack: bool = True
+        self.connector.register_consumer(
+            name="test_consumer",
+            vhost=self.connector.vhost,
+            queue='test',
+            callback=self.connector.callback_func_1,
+            on_error=self.connector.default_error_handler,
+            auto_ack=False,
+        )
+
+        self.assertIsInstance(self.connector.consumers['test_consumer'], expected_consumer_instance)
+        self.assertEqual(self.connector.consumers['test_consumer'].queue, 'test')

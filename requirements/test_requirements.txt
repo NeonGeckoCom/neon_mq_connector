@@ -1,2 +1,3 @@
-pytest~=6.2
-mock
+pytest~=8.0
+parameterized~=0.9.0
+pytest-rabbitmq~=3.1
