@@ -25,6 +25,7 @@
 # LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
 # NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 # SOFTWARE,  EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+import inspect
 import logging
 import time
 
@@ -86,7 +87,11 @@ def retry(callback_on_exceeded: Union[str, Callable] = None,
         callback_on_exceeded_args = []
 
     def decorator(function):
-        def wrapper(self, *args, **kwargs):
+        def wrapper(*args, **kwargs):
+            signature = inspect.signature(function).parameters
+            self = args[0] if 'self' in signature else None
+            if self:
+                args = args[1:]
             with_self = use_self and self
             num_attempts = 1
             error_body = f"{function.__name__}(args={args}, kwargs={kwargs})"
@@ -137,6 +142,9 @@ def retry(callback_on_exceeded: Union[str, Callable] = None,
                         *callback_on_exceeded_args)
                 elif isinstance(callback_on_exceeded, Callable):
                     return callback_on_exceeded(*callback_on_exceeded_args)
+            else:
+                raise RuntimeError(f"Ran out of retries for {function}")
+
         return wrapper
     return decorator
 

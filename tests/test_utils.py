@@ -304,6 +304,16 @@ class TestMQConnectionUtils(unittest.TestCase):
         self.assertFalse(outcome)
         self.assertEqual(3, self.counter)
 
+        # Retry raises exception
+        @retry(num_retries=1)
+        def _retry_fails():
+            raise Exception("This method is supposed to fail")
+
+        with self.assertRaises(Exception) as e:
+            _retry_fails()
+        self.assertIsInstance(e.exception, RuntimeError)
+        self.assertIn("_retry_fails", repr(e.exception))
+
     def test_wait_for_mq_startup(self):
         self.assertTrue(wait_for_mq_startup("mq.neonaiservices.com", 5672))
         self.assertFalse(wait_for_mq_startup("www.neon.ai", 5672, 1))
