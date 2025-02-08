@@ -99,15 +99,15 @@ def retry(callback_on_exceeded: Union[str, Callable] = None,
                 error_body = f'{self.__class__.__name__}.{error_body}'
             while num_attempts <= num_retries:
                 if num_attempts > 1:
-                    LOG.info(f'Retrying {function} execution. '
-                             f'Attempt #{num_attempts}')
+                    LOG.debug(f'Retrying {error_body} execution. '
+                              f'Attempt #{num_attempts}')
                 try:
                     if with_self:
                         return_value = function(self, *args, **kwargs)
                     else:
                         return_value = function(*args, **kwargs)
                     if num_attempts > 1:
-                        LOG.info(f"Function succeeded on try #{num_attempts}")
+                        LOG.info(f"{error_body} succeeded on try #{num_attempts}")
                     return return_value
                 except Exception as e:
                     for i in range(len(callback_on_attempt_failure_args)):

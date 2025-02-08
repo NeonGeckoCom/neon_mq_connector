@@ -207,7 +207,7 @@ class SelectConsumerThread(threading.Thread):
             LOG.error(f"MQ connection closed due to exception: {e}")
         if not self._stopping:
             if e.reply_code == 320:
-                LOG.info("Server shutdown. Try to reconnect after 60s")
+                LOG.info(f"Server shutdown. Try to reconnect after 60s (t={self.name})")
                 self.reconnect(60)
             else:
                 # Connection was lost or closed by the server. Try to re-connect
