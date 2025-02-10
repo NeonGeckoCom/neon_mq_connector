@@ -111,7 +111,7 @@ def retry(callback_on_exceeded: Union[str, Callable] = None,
                         info = inspect.getframeinfo(call_frame)
                         LOG.info(
                             f"{error_body} succeeded on try #{num_attempts}\n"
-                            f"{info.__module__}:{info.function}:{info.lineno}")
+                            f"{info.filename}:{info.function}:{info.lineno}")
                     return return_value
                 except Exception as e:
                     for i in range(len(callback_on_attempt_failure_args)):
