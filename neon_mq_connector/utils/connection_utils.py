@@ -25,6 +25,7 @@
 # LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
 # NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 # SOFTWARE,  EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+import inspect
 import logging
 import time
 
@@ -86,7 +87,11 @@ def retry(callback_on_exceeded: Union[str, Callable] = None,
         callback_on_exceeded_args = []
 
     def decorator(function):
-        def wrapper(self, *args, **kwargs):
+        def wrapper(*args, **kwargs):
+            signature = inspect.signature(function).parameters
+            self = args[0] if 'self' in signature else None
+            if self:
+                args = args[1:]
             with_self = use_self and self
             num_attempts = 1
             error_body = f"{function.__name__}(args={args}, kwargs={kwargs})"
@@ -94,13 +99,20 @@ def retry(callback_on_exceeded: Union[str, Callable] = None,
                 error_body = f'{self.__class__.__name__}.{error_body}'
             while num_attempts <= num_retries:
                 if num_attempts > 1:
-                    LOG.info(f'Retrying {function} execution. '
-                             f'Attempt #{num_attempts}')
+                    LOG.debug(f'Retrying {error_body} execution. '
+                              f'Attempt #{num_attempts}')
                 try:
                     if with_self:
-                        return function(self, *args, **kwargs)
+                        return_value = function(self, *args, **kwargs)
                     else:
-                        return function(*args, **kwargs)
+                        return_value = function(*args, **kwargs)
+                    if num_attempts > 1:
+                        call_frame = inspect.currentframe().f_back.f_back
+                        info = inspect.getframeinfo(call_frame)
+                        LOG.info(
+                            f"{error_body} succeeded on try #{num_attempts}\n"
+                            f"{info.filename}:{info.function}:{info.lineno}")
+                    return return_value
                 except Exception as e:
                     for i in range(len(callback_on_attempt_failure_args)):
                         if callback_on_attempt_failure_args[i] == 'e':
@@ -127,7 +139,7 @@ def retry(callback_on_exceeded: Union[str, Callable] = None,
                     sleep_timeout = get_timeout(backoff_factor=backoff_factor,
                                                 number_of_retries=num_attempts)
                     LOG.warning(f'{error_body}: {e}.')
-                    LOG.info(f'Timeout for {sleep_timeout} secs')
+                    LOG.debug(f'Timeout for {sleep_timeout} secs')
                     num_attempts += 1
                     time.sleep(sleep_timeout)
             LOG.error(f'Failed to execute after {num_retries} attempts')
@@ -137,6 +149,9 @@ def retry(callback_on_exceeded: Union[str, Callable] = None,
                         *callback_on_exceeded_args)
                 elif isinstance(callback_on_exceeded, Callable):
                     return callback_on_exceeded(*callback_on_exceeded_args)
+            else:
+                raise RuntimeError(f"Ran out of retries for {function}")
+
         return wrapper
     return decorator
 

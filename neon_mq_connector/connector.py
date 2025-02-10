@@ -557,8 +557,13 @@ class MQConnector(ABC):
                                       restart_attempts=restart_attempts)
 
     @staticmethod
-    def default_error_handler(thread: ConsumerThreadInstance, exception: Exception):
+    def default_error_handler(thread: ConsumerThreadInstance,
+                              exception: Exception):
         LOG.error(f"{exception} occurred in {thread}")
+        if isinstance(exception, pika.exceptions.AMQPError):
+            LOG.info("Raising exception to exit")
+            # This is a fatal error; raise it so this object can be re-created
+            raise exception
 
     def run_consumers(self, names: Optional[tuple] = None, daemon=True):
         """
@@ -628,15 +633,19 @@ class MQConnector(ABC):
     @retry(callback_on_exceeded='stop', use_self=True,
            num_retries=__run_retries__)
     def run(self, run_consumers: bool = True, run_sync: bool = True,
-            run_observer: bool = True, **kwargs):
+            run_observer: Optional[bool] = None, **kwargs):
         """
         Generic method called on running the instance
 
         :param run_consumers: to run this instance consumers (defaults to True)
         :param run_sync: to run synchronization thread (defaults to True)
         :param run_observer: to run consumers state observation
-            (defaults to True)
+            (defaults to True for Blocking Consumers, else False)
         """
+        if run_observer is None:
+            # Observer thread is default on for Blocking Consumer only
+            run_observer = self.consumer_thread_cls == BlockingConsumerThread
+
         host = self.config.get('server', 'localhost')
         port = int(self.config.get('port', '5672'))
         if not wait_for_mq_startup(host, port, kwargs.get('mq_timeout', 120),
