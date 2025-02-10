@@ -561,6 +561,7 @@ class MQConnector(ABC):
                               exception: Exception):
         LOG.error(f"{exception} occurred in {thread}")
         if isinstance(exception, pika.exceptions.AMQPError):
+            LOG.info("Raising exception to exit")
             # This is a fatal error; raise it so this object can be re-created
             raise exception
 
