@@ -557,8 +557,12 @@ class MQConnector(ABC):
                                       restart_attempts=restart_attempts)
 
     @staticmethod
-    def default_error_handler(thread: ConsumerThreadInstance, exception: Exception):
+    def default_error_handler(thread: ConsumerThreadInstance,
+                              exception: Exception):
         LOG.error(f"{exception} occurred in {thread}")
+        if isinstance(exception, pika.exceptions.AMQPError):
+            # This is a fatal error; raise it so this object can be re-created
+            raise exception
 
     def run_consumers(self, names: Optional[tuple] = None, daemon=True):
         """

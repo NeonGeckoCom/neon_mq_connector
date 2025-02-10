@@ -233,6 +233,10 @@ class SelectConsumerThread(threading.Thread):
                 LOG.debug(f"Starting Consumer: {self.name}")
                 self.connection: pika.SelectConnection = self.create_connection()
                 self.connection.ioloop.start()
+            except pika.exceptions.StreamLostError as e:
+                # This connection is dead.
+                self._close_connection()
+                self.error_func(self, e)
             except (pika.exceptions.ChannelClosed,
                     pika.exceptions.ConnectionClosed) as e:
                 LOG.info(f"Closed {e.reply_code}: {e.reply_text}")
