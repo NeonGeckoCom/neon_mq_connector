@@ -230,7 +230,7 @@ class SelectConsumerThread(threading.Thread):
         set_event_loop(self._loop)
         if not self.is_consuming:
             try:
-                LOG.info(f"Starting Consumer: {self.name}")
+                LOG.debug(f"Starting Consumer: {self.name}")
                 self.connection: pika.SelectConnection = self.create_connection()
                 self.connection.ioloop.start()
             except (pika.exceptions.ChannelClosed,

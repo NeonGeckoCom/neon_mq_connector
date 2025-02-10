@@ -107,7 +107,10 @@ def retry(callback_on_exceeded: Union[str, Callable] = None,
                     else:
                         return_value = function(*args, **kwargs)
                     if num_attempts > 1:
-                        LOG.info(f"{error_body} succeeded on try #{num_attempts}")
+                        call_frame = inspect.currentframe().f_back
+                        info = inspect.getframeinfo(call_frame)
+                        LOG.info(f"{error_body} succeeded on try #{num_attempts}\n"
+                                 f"{info.filename}:{info.function}:{info.lineno}")
                     return return_value
                 except Exception as e:
                     for i in range(len(callback_on_attempt_failure_args)):
@@ -135,7 +138,7 @@ def retry(callback_on_exceeded: Union[str, Callable] = None,
                     sleep_timeout = get_timeout(backoff_factor=backoff_factor,
                                                 number_of_retries=num_attempts)
                     LOG.warning(f'{error_body}: {e}.')
-                    LOG.info(f'Timeout for {sleep_timeout} secs')
+                    LOG.debug(f'Timeout for {sleep_timeout} secs')
                     num_attempts += 1
                     time.sleep(sleep_timeout)
             LOG.error(f'Failed to execute after {num_retries} attempts')
