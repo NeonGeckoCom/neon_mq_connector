@@ -230,6 +230,7 @@ class SelectConsumerThread(threading.Thread):
         set_event_loop(self._loop)
         if not self.is_consuming:
             try:
+                LOG.info(f"Starting Consumer: {self.name}")
                 self.connection: pika.SelectConnection = self.create_connection()
                 self.connection.ioloop.start()
             except (pika.exceptions.ChannelClosed,
@@ -274,6 +275,7 @@ class SelectConsumerThread(threading.Thread):
             self._is_consumer_alive = False
         else:
             self._stopping = False
+        LOG.info(f"Connection Closed stopping={self._stopping} (t={self.name})")
 
     def reconnect(self, wait_interval: int = 5):
         self._close_connection(mark_consumer_as_dead=False)
