@@ -30,6 +30,7 @@ import uuid
 
 from threading import Event
 from pika.channel import Channel
+from pika.spec import Basic, BasicProperties
 from pika.exceptions import ProbableAccessDeniedError, StreamLostError
 from neon_mq_connector.connector import MQConnector
 from ovos_config.config import Configuration
@@ -101,7 +102,8 @@ def send_mq_request(vhost: str, request_data: dict, target_queue: str,
             return
         LOG.error(f"{thread} raised {error}")
 
-    def handle_mq_response(channel: Channel, method, _, body):
+    def handle_mq_response(channel: Channel, method: Basic.Deliver,
+                           _: BasicProperties, body: bytes):
         """
         Method that handles Neon API output.
         In case received output message with the desired id, event stops
@@ -121,6 +123,7 @@ def send_mq_request(vhost: str, request_data: dict, target_queue: str,
         if api_output_msg_id == message_id:
             LOG.debug(f'MQ output: {api_output}')
             channel.basic_ack(delivery_tag=method.delivery_tag)
+            channel.queue_delete(response_queue)
             channel.close()
             response_data.update(api_output)
             response_event.set()
