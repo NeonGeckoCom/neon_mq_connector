@@ -36,6 +36,7 @@ from neon_mq_connector.connector import MQConnector
 from ovos_config.config import Configuration
 from ovos_utils.log import LOG
 
+from neon_mq_connector.utils.connection_utils import SuppressPikaLogging
 from neon_mq_connector.utils.network_utils import b64_to_dict
 
 _default_mq_config = {
@@ -160,7 +161,8 @@ def send_mq_request(vhost: str, request_data: dict, target_queue: str,
             if not response_event.is_set():
                 LOG.error(f"Timeout waiting for response to: {message_id} on "
                           f"{response_queue}")
-            neon_api_mq_handler.stop_consumers()
+            with SuppressPikaLogging():
+                neon_api_mq_handler.stop_consumers()
     except ProbableAccessDeniedError:
         raise ValueError(f"{vhost} is not a valid endpoint for "
                          f"{config.get('users').get('mq_handler').get('user')}")

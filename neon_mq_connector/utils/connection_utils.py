@@ -196,23 +196,35 @@ def check_rmq_is_available(
     :param connection_params: ConnectionParameters object to try and connect to
     :return: True if the requested connection is successful, else False
     """
-    pika_log = logging.getLogger("pika")
-    pika_level = pika_log.getEffectiveLevel()
-    success = False
-    try:
-        pika_log.setLevel(logging.CRITICAL)
-        connection = BlockingConnection(connection_params)
-        connection.close()
-        success = True
-    except IncompatibleProtocolError as e:
-        LOG.debug(f"RMQ is likely still starting up (e={e})")
-    except ProbableAccessDeniedError as e:
-        if connection_params.virtual_host == '/':
-            LOG.warning(f"Access was denied to default vhost='/'. Assuming RMQ "
-                        f"broker is online.")
+    with SuppressPikaLogging():
+        success = False
+        try:
+            connection = BlockingConnection(connection_params)
+            connection.close()
             success = True
-        else:
-            raise e
-    finally:
-        pika_log.setLevel(pika_level)
+        except IncompatibleProtocolError as e:
+            LOG.debug(f"RMQ is likely still starting up (e={e})")
+        except ProbableAccessDeniedError as e:
+            if connection_params.virtual_host == '/':
+                LOG.warning(f"Access was denied to default vhost='/'. Assuming RMQ "
+                            f"broker is online.")
+                success = True
+            else:
+                raise e
     return success
+
+
+class SuppressPikaLogging:
+    """
+    Helper to temporarily suppress pika logging
+    """
+    _pika_log = logging.getLogger("pika")
+
+    def __init__(self):
+        self._pika_level = self._pika_log.getEffectiveLevel()
+
+    def __enter__(self):
+        self._pika_log.setLevel(logging.CRITICAL)
+
+    def __exit__(self, *_):
+        self._pika_log.setLevel(self._pika_level)
