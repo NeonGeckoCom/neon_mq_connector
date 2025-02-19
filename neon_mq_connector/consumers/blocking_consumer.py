@@ -160,6 +160,9 @@ class BlockingConsumerThread(threading.Thread):
                 raise RuntimeError(f"Connection still open: {self.connection}")
         except pika.exceptions.StreamLostError:
             pass
+        except pika.exceptions.ConnectionClosed:
+            # The connection was already closed
+            pass
         except AttributeError:
             # This happens regularly during connection close within `pika`
             pass
