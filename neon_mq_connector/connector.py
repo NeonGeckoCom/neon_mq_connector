@@ -480,13 +480,13 @@ class MQConnector(ABC):
         self.consumer_properties[name]['started'] = False
 
         if exchange_type == ExchangeType.fanout.value:
-            LOG.info(f'Subscriber exchange listener registered: '
-                     f'[name={name},exchange={exchange},vhost={vhost},'
-                     f'async={self.async_consumers_enabled}]')
+            LOG.debug(f'Subscriber exchange listener registered: '
+                      f'[name={name},exchange={exchange},vhost={vhost},'
+                      f'async={self.async_consumers_enabled}]')
         else:
-            LOG.info(f'Consumer queue listener registered: '
-                     f'[name={name},queue={queue},vhost={vhost},'
-                     f'async={self.async_consumers_enabled}]')
+            LOG.debug(f'Consumer queue listener registered: '
+                      f'[name={name},queue={queue},vhost={vhost},'
+                      f'async={self.async_consumers_enabled}]')
 
         self.consumers[name] = self.consumer_thread_cls(**self.consumer_properties[name]['properties'])
 

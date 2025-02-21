@@ -25,7 +25,7 @@
 # LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
 # NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 # SOFTWARE,  EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-
+import logging
 import os
 import sys
 import time
@@ -357,6 +357,32 @@ class TestMQConnectionUtils(unittest.TestCase):
                                                      virtual_host='/',
                                                      credentials=valid_creds)
         self.assertTrue(check_rmq_is_available(invalid_default_vhost))
+
+    def test_supress_pika_logging(self):
+        from neon_mq_connector.utils.connection_utils import SuppressPikaLogging
+        pika_logger = logging.getLogger("pika")
+        pika_logger.setLevel(logging.DEBUG)
+        self.assertEqual(pika_logger.level, logging.DEBUG)
+
+        # Normal Behavior
+        with SuppressPikaLogging():
+            self.assertEqual(pika_logger.level, logging.CRITICAL)
+        self.assertEqual(pika_logger.level, logging.DEBUG)
+
+        # With Exception
+        try:
+            with SuppressPikaLogging():
+                self.assertEqual(pika_logger.level, logging.CRITICAL)
+                raise RuntimeError("This is an exception")
+        except RuntimeError:
+            self.assertEqual(pika_logger.level, logging.DEBUG)
+
+        # With extra changes
+        with SuppressPikaLogging():
+            self.assertEqual(pika_logger.level, logging.CRITICAL)
+            pika_logger.setLevel(logging.INFO)
+            self.assertEqual(pika_logger.level, logging.INFO)
+        self.assertEqual(pika_logger.level, logging.DEBUG)
 
 
 class TestConsumerUtils(unittest.TestCase):

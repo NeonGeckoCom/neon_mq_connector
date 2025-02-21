@@ -132,6 +132,7 @@ def send_mq_request(vhost: str, request_data: dict, target_queue: str,
             channel.basic_nack(delivery_tag=method.delivery_tag)
             LOG.debug(f"Ignoring {api_output_msg_id} waiting for {message_id}")
 
+    neon_api_mq_handler = None
     try:
         config = Configuration().get('MQ') or _default_mq_config
         if not config['users'].get('mq_handler'):
@@ -168,4 +169,8 @@ def send_mq_request(vhost: str, request_data: dict, target_queue: str,
                          f"{config.get('users').get('mq_handler').get('user')}")
     except Exception as ex:
         LOG.exception(f'Exception occurred while resolving Neon API: {ex}')
+    finally:
+        # Ensure this object is always cleaned up
+        if neon_api_mq_handler:
+            neon_api_mq_handler.shutdown()
     return response_data
