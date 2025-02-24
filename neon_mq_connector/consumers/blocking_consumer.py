@@ -167,6 +167,11 @@ class BlockingConsumerThread(threading.Thread):
             # This happens regularly during connection close within `pika`
             pass
         except Exception as e:
-            LOG.exception(f"Failed to close connection due to unexpected exception: {e}")
+            if self.connection.is_open:
+                LOG.exception(f"Failed to close connection due to unexpected "
+                              f"exception: {e}")
+            else:
+                # Something went wrong, but the connection closed anyway
+                LOG.warning(e)
         self._consumer_started.clear()
         LOG.info("Consumer connection closed")
