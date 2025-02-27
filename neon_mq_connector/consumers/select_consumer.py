@@ -206,9 +206,13 @@ class SelectConsumerThread(threading.Thread):
         else:
             LOG.error(f"MQ connection closed due to exception: {e}")
         if not self._stopping:
-            # Connection was gracefully closed by the server. Try to re-connect
-            LOG.info(f"Trying to reconnect after server closed connection")
-            self.reconnect()
+            if hasattr(e, "reply_code") and e.reply_code == 320:
+                LOG.info(f"Server shutdown. Try to reconnect after 60s (t={self.name})")
+                self.reconnect(60)
+            else:
+                # Connection was lost or closed by the server. Try to re-connect
+                LOG.info(f"Trying to reconnect after server connection loss")
+                self.reconnect()
 
     @property
     def is_consumer_alive(self) -> bool:
@@ -226,8 +230,13 @@ class SelectConsumerThread(threading.Thread):
         set_event_loop(self._loop)
         if not self.is_consuming:
             try:
+                LOG.debug(f"Starting Consumer: {self.name}")
                 self.connection: pika.SelectConnection = self.create_connection()
                 self.connection.ioloop.start()
+            except pika.exceptions.StreamLostError as e:
+                # This connection is dead.
+                self._close_connection()
+                self.error_func(self, e)
             except (pika.exceptions.ChannelClosed,
                     pika.exceptions.ConnectionClosed) as e:
                 LOG.info(f"Closed {e.reply_code}: {e.reply_text}")
@@ -270,6 +279,8 @@ class SelectConsumerThread(threading.Thread):
             self._is_consumer_alive = False
         else:
             self._stopping = False
+        LOG.debug(f"Connection Closed stopping={self._stopping} "
+                  f"(t={self.name})")
 
     def reconnect(self, wait_interval: int = 5):
         self._close_connection(mark_consumer_as_dead=False)

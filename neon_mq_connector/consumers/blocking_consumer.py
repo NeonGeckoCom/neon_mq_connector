@@ -160,10 +160,18 @@ class BlockingConsumerThread(threading.Thread):
                 raise RuntimeError(f"Connection still open: {self.connection}")
         except pika.exceptions.StreamLostError:
             pass
+        except pika.exceptions.ConnectionClosed:
+            # The connection was already closed
+            pass
         except AttributeError:
             # This happens regularly during connection close within `pika`
             pass
         except Exception as e:
-            LOG.exception(f"Failed to close connection due to unexpected exception: {e}")
+            if self.connection.is_open:
+                LOG.exception(f"Failed to close connection due to unexpected "
+                              f"exception: {e}")
+            else:
+                # Something went wrong, but the connection closed anyway
+                LOG.warning(e)
         self._consumer_started.clear()
         LOG.info("Consumer connection closed")

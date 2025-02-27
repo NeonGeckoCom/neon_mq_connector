@@ -25,7 +25,7 @@
 # LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
 # NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 # SOFTWARE,  EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-
+import logging
 import os
 import sys
 import time
@@ -38,6 +38,7 @@ import pika
 from threading import Thread
 
 from pika.exceptions import ProbableAuthenticationError
+from pydantic import BaseModel
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
@@ -46,14 +47,18 @@ from neon_mq_connector.utils.connection_utils import get_timeout, retry, \
     wait_for_mq_startup
 from neon_mq_connector.utils.client_utils import MQConnector, NeonMQHandler
 from neon_mq_connector.utils.network_utils import dict_to_b64, b64_to_dict
+from neon_mq_connector.utils.rabbit_utils import create_mq_callback
 
 from .fixtures import rmq_instance
 
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 TEST_PATH = os.path.join(ROOT_DIR, "tests", "ccl_files")
 
-INPUT_CHANNEL = str(time.time())
-OUTPUT_CHANNEL = str(time.time())
+RANDOM_STR = str(int(time.time()))
+
+INPUT_CHANNEL_A = RANDOM_STR + '_a'
+INPUT_CHANNEL_B = RANDOM_STR + '_b'
+OUTPUT_CHANNEL = RANDOM_STR + '_output'
 
 TEST_DICT = {b"section 1": {"key1": "val1",
                             "key2": "val2"},
@@ -70,6 +75,11 @@ def callback_on_failure():
     return False
 
 
+class MockRequestModel(BaseModel):
+    message_id: str
+    test: bool = True
+
+
 class MqCallbackDecoratorClass:
     from neon_mq_connector.utils.rabbit_utils import create_mq_callback
     class_callback = Mock()
@@ -77,18 +87,22 @@ class MqCallbackDecoratorClass:
     def __init__(self):
         self.callback = Mock()
 
-    @create_mq_callback()
+    @create_mq_callback
     def default_callback(self, body):
         self.callback(body)
 
-    @create_mq_callback(())
+    @create_mq_callback(include_callback_props=())
     def no_kwargs_callback(self, **kwargs):
         self.callback(**kwargs)
 
     @staticmethod
-    @create_mq_callback()
+    @create_mq_callback
     def static_callback(body):
         MqCallbackDecoratorClass.class_callback(body)
+
+    @create_mq_callback(request_model=MockRequestModel)
+    def callback_with_pydantic_model(self, **kwargs):
+        self.callback(**kwargs)
 
 
 class SimpleMQConnector(MQConnector):
@@ -110,6 +124,15 @@ class SimpleMQConnector(MQConnector):
                               properties=pika.BasicProperties(expiration='1000'))
         channel.basic_ack(delivery_tag=method.delivery_tag)
 
+    @create_mq_callback
+    def respond_wrapped(self, body: dict):
+        return {
+            "message_id": body["message_id"],
+            "success": True,
+            "request_data": body["data"],
+        }
+
+
 
 @pytest.mark.usefixtures("rmq_instance")
 class TestClientUtils(unittest.TestCase):
@@ -130,8 +153,13 @@ class TestClientUtils(unittest.TestCase):
                                                     vhost=vhost)
             self.test_connector.register_consumer("neon_utils_test",
                                                   vhost,
-                                                  INPUT_CHANNEL,
+                                                  INPUT_CHANNEL_A,
                                                   self.test_connector.respond,
+                                                  auto_ack=False)
+            self.test_connector.register_consumer("neon_utils_test_wrapped",
+                                                  vhost,
+                                                  INPUT_CHANNEL_B,
+                                                  self.test_connector.respond_wrapped,
                                                   auto_ack=False)
             self.test_connector.run_consumers()
 
@@ -143,7 +171,7 @@ class TestClientUtils(unittest.TestCase):
     def test_send_mq_request_valid(self):
         from neon_mq_connector.utils.client_utils import send_mq_request
         request = {"data": time.time()}
-        response = send_mq_request("/neon_testing", request, INPUT_CHANNEL)
+        response = send_mq_request("/neon_testing", request, INPUT_CHANNEL_A)
         self.assertIsInstance(response, dict)
         self.assertTrue(response["success"])
         self.assertEqual(response["request_data"], request["data"])
@@ -152,7 +180,16 @@ class TestClientUtils(unittest.TestCase):
         from neon_mq_connector.utils.client_utils import send_mq_request
         request = {"data": time.time()}
         response = send_mq_request("/neon_testing", request,
-                                   INPUT_CHANNEL, OUTPUT_CHANNEL)
+                                   INPUT_CHANNEL_A, OUTPUT_CHANNEL)
+        self.assertIsInstance(response, dict)
+        self.assertTrue(response["success"])
+        self.assertEqual(response["request_data"], request["data"])
+
+    def test_send_mq_request_response_emit_handled_by_create_mq_request_decorator(self):
+        from neon_mq_connector.utils.client_utils import send_mq_request
+
+        request = {"data": time.time()}
+        response = send_mq_request("/neon_testing", request, INPUT_CHANNEL_B)
         self.assertIsInstance(response, dict)
         self.assertTrue(response["success"])
         self.assertEqual(response["request_data"], request["data"])
@@ -164,7 +201,7 @@ class TestClientUtils(unittest.TestCase):
 
         def check_response(name: str):
             request = {"data": time.time()}
-            response = send_mq_request("/neon_testing", request, INPUT_CHANNEL)
+            response = send_mq_request("/neon_testing", request, INPUT_CHANNEL_A)
             self.assertIsInstance(response, dict)
             if not isinstance(response, dict):
                 responses[name] = {'success': False,
@@ -267,6 +304,16 @@ class TestMQConnectionUtils(unittest.TestCase):
         self.assertFalse(outcome)
         self.assertEqual(3, self.counter)
 
+        # Retry raises exception
+        @retry(num_retries=1)
+        def _retry_fails():
+            raise Exception("This method is supposed to fail")
+
+        with self.assertRaises(Exception) as e:
+            _retry_fails()
+        self.assertIsInstance(e.exception, RuntimeError)
+        self.assertIn("_retry_fails", repr(e.exception))
+
     def test_wait_for_mq_startup(self):
         self.assertTrue(wait_for_mq_startup("mq.neonaiservices.com", 5672))
         self.assertFalse(wait_for_mq_startup("www.neon.ai", 5672, 1))
@@ -311,6 +358,32 @@ class TestMQConnectionUtils(unittest.TestCase):
                                                      credentials=valid_creds)
         self.assertTrue(check_rmq_is_available(invalid_default_vhost))
 
+    def test_supress_pika_logging(self):
+        from neon_mq_connector.utils.connection_utils import SuppressPikaLogging
+        pika_logger = logging.getLogger("pika")
+        pika_logger.setLevel(logging.DEBUG)
+        self.assertEqual(pika_logger.level, logging.DEBUG)
+
+        # Normal Behavior
+        with SuppressPikaLogging():
+            self.assertEqual(pika_logger.level, logging.CRITICAL)
+        self.assertEqual(pika_logger.level, logging.DEBUG)
+
+        # With Exception
+        try:
+            with SuppressPikaLogging():
+                self.assertEqual(pika_logger.level, logging.CRITICAL)
+                raise RuntimeError("This is an exception")
+        except RuntimeError:
+            self.assertEqual(pika_logger.level, logging.DEBUG)
+
+        # With extra changes
+        with SuppressPikaLogging():
+            self.assertEqual(pika_logger.level, logging.CRITICAL)
+            pika_logger.setLevel(logging.INFO)
+            self.assertEqual(pika_logger.level, logging.INFO)
+        self.assertEqual(pika_logger.level, logging.DEBUG)
+
 
 class TestConsumerUtils(unittest.TestCase):
     def test_default_error_handler(self):
@@ -343,27 +416,36 @@ class TestNetworkUtils(unittest.TestCase):
 
 
 class TestRabbitUtils(unittest.TestCase):
+
+    @staticmethod
+    def create_mock_request(body):
+        return {
+            "channel": Mock(),
+            "method": Mock(),
+            "properties": Mock(),
+            "body": dict_to_b64(body)
+        }
+
     def test_create_mq_callback(self):
         from neon_mq_connector.utils.rabbit_utils import create_mq_callback
         callback = Mock()
         test_body = {"test": True}
-        valid_request = {"channel": Mock(), "method": Mock(),
-                         "properties": Mock(),
-                         "body": dict_to_b64(test_body)}
+        valid_request = self.create_mock_request(body=test_body)
+        mock_model = MockRequestModel(message_id="test_id")
 
-        @create_mq_callback()
+        @create_mq_callback
         def default_handler_body(body: dict):
             callback(body)
 
-        @create_mq_callback()
+        @create_mq_callback
         def default_handler_kwargs(**kwargs):
             callback(**kwargs)
 
-        @create_mq_callback(('body', 'method'))
+        @create_mq_callback(include_callback_props=('body', 'method'))
         def extra_kwargs_handler(**kwargs):
             callback(**kwargs)
 
-        @create_mq_callback(())
+        @create_mq_callback(include_callback_props=())
         def no_kwargs_handler(**kwargs):
             callback(**kwargs)
 
@@ -397,6 +479,10 @@ class TestRabbitUtils(unittest.TestCase):
         test_handlers.static_callback(*valid_request.values())
         test_handlers.class_callback.assert_called_once_with(test_body)
 
+        # Pydantic model handler
+        valid_model_request = self.create_mock_request(body=mock_model.model_dump())
+        test_handlers.callback_with_pydantic_model(*valid_model_request.values())
+        test_handlers.callback.assert_called_with(body=mock_model)
 
 class TestThreadUtils(unittest.TestCase):
     counter = 0
