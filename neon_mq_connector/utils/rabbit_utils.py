@@ -126,7 +126,7 @@ def create_mq_callback(
                           f'error={val_err}')
                 res = None
             except Exception as ex:
-                LOG.error(f'Execution of {f.__name__} failed due to '
+                LOG.exception(f'Execution of {f.__name__} failed due to '
                           f'exception={ex}')
                 res = None
             return res
