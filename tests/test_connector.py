@@ -42,7 +42,7 @@ from neon_mq_connector.connector import MQConnector, ConsumerThreadInstance
 from neon_mq_connector.utils import RepeatingTimer
 from neon_mq_connector.utils.rabbit_utils import create_mq_callback
 
-from .fixtures import rmq_instance
+from .fixtures import rmq_instance  # noqa: F401
 
 
 class MQConnectorChild(MQConnector):
@@ -370,6 +370,7 @@ class TestMQConnectorInit(unittest.TestCase):
         self.rmq_instance.stop()
         connector.run(run_sync=False, run_observer=False, mq_timeout=1)
         self.assertFalse(connector.started)
+        self.assertFalse(connector.check_health())
         for consumer in connector.consumers.values():
             # The consumer is marked as alive at init, until explicitly joined
             # self.assertFalse(consumer.is_consumer_alive)
@@ -380,6 +381,7 @@ class TestMQConnectorInit(unittest.TestCase):
         self.rmq_instance.start()
         connector.run(run_sync=False, run_observer=False)
         self.assertTrue(connector.started)
+        self.assertTrue(connector.check_health())
         connector.send_message(request_data, test_vhost, queue=test_queue)
         callback_event.wait(timeout=5)
         self.assertTrue(callback_event.is_set())
