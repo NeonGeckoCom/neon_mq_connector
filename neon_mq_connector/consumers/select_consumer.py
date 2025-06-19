@@ -118,17 +118,20 @@ class SelectConsumerThread(threading.Thread):
 
     def on_connected(self, _):
         """Called when we are fully connected to RabbitMQ"""
+        LOG.debug("Connected")
         self.connection.channel(on_open_callback=self.on_channel_open)
 
     def on_connection_fail(self, *_, **__):
         """ Called when connection to RabbitMQ fails"""
         self.connection_failed_attempts += 1
+        LOG.warning(f"Connection failed on attempt {self.connection_failed_attempts}")
         if self.connection_failed_attempts > self.max_connection_failed_attempts:
             LOG.error(f'Failed establish MQ connection after '
                       f'{self.connection_failed_attempts} attempts')
             self.error_func(self, ConnectionError("Connection not established"))
             self._close_connection(mark_consumer_as_dead=True)
         else:
+            LOG.info("Reconnecting after connection failed")
             self.reconnect()
 
     def on_channel_open(self, new_channel: Channel):
@@ -144,7 +147,7 @@ class SelectConsumerThread(threading.Thread):
         self._consumer_started.set()
 
     def on_channel_close(self, *_, **__):
-        LOG.debug(f"Channel closed.")
+        LOG.debug("Channel closed.")
         self._channel_closed.set()
 
     def declare_queue(self, _unused_frame: Optional[Method] = None):
@@ -211,7 +214,7 @@ class SelectConsumerThread(threading.Thread):
                 self.reconnect(60)
             else:
                 # Connection was lost or closed by the server. Try to re-connect
-                LOG.info(f"Trying to reconnect after server connection loss")
+                LOG.info("Trying to reconnect after server connection loss")
                 self.reconnect()
 
     @property
