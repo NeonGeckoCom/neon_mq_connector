@@ -144,6 +144,7 @@ class SelectConsumerThread(threading.Thread):
                                       callback=self.declare_queue)
         else:
             self.declare_queue()
+        LOG.debug(f"Channel opened for queue '{self.queue}' ")
         self._consumer_started.set()
 
     def on_channel_close(self, *_, **__):
