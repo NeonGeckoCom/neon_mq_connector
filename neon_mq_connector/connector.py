@@ -664,13 +664,13 @@ class MQConnector(ABC):
 
     @retry(callback_on_exceeded='stop', use_self=True,
            num_retries=__run_retries__)
-    def run(self, run_consumers: bool = True, run_sync: bool = True,
+    def run(self, run_consumers: bool = True, run_sync: bool = False,
             run_observer: Optional[bool] = None, **kwargs):
         """
         Generic method called on running the instance
 
         :param run_consumers: to run this instance consumers (defaults to True)
-        :param run_sync: to run synchronization thread (defaults to True)
+        :param run_sync: to run synchronization thread (defaults to False)
         :param run_observer: to run consumers state observation
             (defaults to True for Blocking Consumers, else False)
         """
