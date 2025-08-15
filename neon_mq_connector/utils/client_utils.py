@@ -146,8 +146,9 @@ def send_mq_request(vhost: str, request_data: dict, target_queue: str,
             raise ConnectionError("MQ Connection not established.")
 
         if expect_response:
+            consumer_name = uuid.uuid4().hex
             neon_api_mq_handler.register_consumer(
-                'neon_output_handler', neon_api_mq_handler.vhost,
+                consumer_name, neon_api_mq_handler.vhost,
                 response_queue, handle_mq_response, on_error, auto_ack=False)
             neon_api_mq_handler.run_consumers()
             request_data['routing_key'] = response_queue
