@@ -32,6 +32,7 @@ import unittest
 import pika
 import pytest
 
+from os import environ
 from unittest.mock import Mock, patch
 from ovos_utils.log import LOG
 from pika.adapters.blocking_connection import BlockingConnection
@@ -42,7 +43,9 @@ from neon_mq_connector.connector import MQConnector, ConsumerThreadInstance
 from neon_mq_connector.utils import RepeatingTimer
 from neon_mq_connector.utils.rabbit_utils import create_mq_callback
 
-from .fixtures import rmq_instance  # noqa: F401
+from neon_minerva.integration.rabbit_mq import rmq_instance  # noqa: F401
+
+environ["TEST_RMQ_VHOSTS"] = "/neon_testing"
 
 
 class MQConnectorChild(MQConnector):
