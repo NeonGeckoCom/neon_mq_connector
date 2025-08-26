@@ -27,7 +27,6 @@
 # SOFTWARE,  EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 import logging
 import os
-import sys
 import time
 import unittest
 from unittest.mock import Mock
@@ -40,7 +39,7 @@ from threading import Thread
 from pika.exceptions import ProbableAuthenticationError
 from pydantic import BaseModel
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+from neon_minerva.integration.rabbit_mq import rmq_instance  # noqa: F401
 
 from neon_mq_connector.utils import RepeatingTimer
 from neon_mq_connector.utils.connection_utils import get_timeout, retry, \
@@ -49,7 +48,6 @@ from neon_mq_connector.utils.client_utils import MQConnector, NeonMQHandler
 from neon_mq_connector.utils.network_utils import dict_to_b64, b64_to_dict
 from neon_mq_connector.utils.rabbit_utils import create_mq_callback
 
-from .fixtures import rmq_instance
 
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 TEST_PATH = os.path.join(ROOT_DIR, "tests", "ccl_files")
@@ -63,7 +61,7 @@ OUTPUT_CHANNEL = RANDOM_STR + '_output'
 TEST_DICT = {b"section 1": {"key1": "val1",
                             "key2": "val2"},
              "section 2": {"key_1": b"val1",
-                           "key_2": f"val2"}}
+                           "key_2": "val2"}}
 
 TEST_DICT_B64 = b'IntiJ3NlY3Rpb24gMSc6IHsna2V5MSc6ICd2YWwxJywgJ2tleTInOiAndm' \
                 b'FsMid9LCAnc2VjdGlvbiAyJzogeydrZXlfMSc6IGIndmFsMScsICdrZXlfM' \

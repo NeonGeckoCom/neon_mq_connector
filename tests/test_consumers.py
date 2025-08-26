@@ -35,8 +35,7 @@ from pika.connection import ConnectionParameters
 from pika.credentials import PlainCredentials
 from pika.exchange_type import ExchangeType
 
-from .fixtures import rmq_instance
-
+from neon_minerva.integration.rabbit_mq import rmq_instance  # noqa: F401
 
 @pytest.mark.usefixtures("rmq_instance")
 class TestBlockingConsumer(TestCase):

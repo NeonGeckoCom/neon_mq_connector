@@ -42,7 +42,7 @@ from neon_mq_connector.connector import MQConnector, ConsumerThreadInstance
 from neon_mq_connector.utils import RepeatingTimer
 from neon_mq_connector.utils.rabbit_utils import create_mq_callback
 
-from .fixtures import rmq_instance  # noqa: F401
+from neon_minerva.integration.rabbit_mq import rmq_instance  # noqa: F401
 
 
 class MQConnectorChild(MQConnector):
