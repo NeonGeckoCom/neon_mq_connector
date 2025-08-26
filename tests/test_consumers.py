@@ -28,6 +28,7 @@
 
 import pytest
 
+from os import environ
 from time import sleep
 from unittest.mock import Mock
 from unittest import TestCase
@@ -36,6 +37,9 @@ from pika.credentials import PlainCredentials
 from pika.exchange_type import ExchangeType
 
 from neon_minerva.integration.rabbit_mq import rmq_instance  # noqa: F401
+
+environ["TEST_RMQ_VHOSTS"] = "/neon_testing"
+
 
 @pytest.mark.usefixtures("rmq_instance")
 class TestBlockingConsumer(TestCase):

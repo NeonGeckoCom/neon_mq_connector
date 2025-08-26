@@ -48,6 +48,7 @@ from neon_mq_connector.utils.client_utils import MQConnector, NeonMQHandler
 from neon_mq_connector.utils.network_utils import dict_to_b64, b64_to_dict
 from neon_mq_connector.utils.rabbit_utils import create_mq_callback
 
+os.environ["TEST_RMQ_VHOSTS"] = "/neon_testing"
 
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 TEST_PATH = os.path.join(ROOT_DIR, "tests", "ccl_files")
