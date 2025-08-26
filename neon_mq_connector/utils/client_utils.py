@@ -69,7 +69,8 @@ class NeonMQHandler(MQConnector):
 
     def shutdown(self):
         MQConnector.stop(self)
-        self.connection.close()
+        with SuppressPikaLogging():
+            self.connection.close()
         if not self.connection.is_closed:
             raise RuntimeError(f"Connection is still open: {self.connection}")
 
