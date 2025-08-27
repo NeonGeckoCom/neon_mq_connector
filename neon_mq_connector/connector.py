@@ -30,7 +30,6 @@ import os
 import copy
 import time
 import uuid
-from asyncio import Event
 
 import pika
 import pika.exceptions
@@ -300,7 +299,7 @@ class MQConnector(ABC):
         if not isinstance(request_data, dict):
             raise TypeError(f"Expected dict and got {type(request_data)}")
         if not request_data:
-            raise ValueError(f'No request data provided')
+            raise ValueError('No request data provided')
 
         # Ensure `message_id` in data will match context in messagebus connector
         if request_data.get('message_id') is None:
@@ -496,6 +495,38 @@ class MQConnector(ABC):
             return SelectConsumerThread
         return BlockingConsumerThread
 
+    def check_health(self) -> bool:
+        """
+        Health check to determine if each consumer is in a healthy state.
+        """
+        if not self._consumers_started:
+            LOG.info("Waiting for consumer start")
+            return False
+        for name, props in self.consumer_properties.items():
+            thread = self.consumers.get(name)
+            if thread and thread.is_alive():
+                # Thread is alive, assume this one is fine
+                continue
+            elif thread and props.get("dead"):
+                # Thread exists but is not alive
+                LOG.error(f"Consumer {name} is dead and cannot be restarted")
+                return False
+            else:
+                # The thread does not exist
+                if props.get('restart_attempts',
+                             self.__max_consumer_restarts__) >= self.__max_consumer_restarts__:
+                    LOG.error(f"Consumer {name} has exceeded max restart attempts")
+                elif props.get('dead'):
+                    # Explicitly marked as dead after failure to restart
+                    LOG.error(f"Consumer {name} is marked as dead")
+                else:
+                    # Consumers are started but this thread is missing
+                    LOG.error(f"Consumer {name} is not running but not also "
+                              f"not marked as dead.")
+                return False
+        # Nothing is dead, return True
+        return True
+
     def restart_consumer(self, name: str):
         self.stop_consumers(names=(name,))
         consumer_data = self.consumer_properties.get(name, {})
@@ -517,6 +548,7 @@ class MQConnector(ABC):
             self.consumer_properties[name].setdefault('num_restarted', 0)
             self.consumer_properties[name]['num_restarted'] += 1
         if err_msg:
+            self.consumer_properties[name]['dead'] = True
             LOG.error(f'Cannot restart consumer "{name}" - {err_msg}')
 
     def register_subscriber(self, name: str, vhost: str,

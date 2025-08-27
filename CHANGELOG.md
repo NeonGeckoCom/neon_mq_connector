@@ -1,60 +1,32 @@
 # Changelog
 
-## [0.8.1a6](https://github.com/NeonGeckoCom/neon_mq_connector/tree/0.8.1a6) (2025-02-24)
+## [0.9.1a3](https://github.com/NeonGeckoCom/neon_mq_connector/tree/0.9.1a3) (2025-08-26)
 
-[Full Changelog](https://github.com/NeonGeckoCom/neon_mq_connector/compare/0.8.1a5...0.8.1a6)
-
-**Merged pull requests:**
-
-- Add connection close exception handling [\#131](https://github.com/NeonGeckoCom/neon_mq_connector/pull/131) ([NeonDaniel](https://github.com/NeonDaniel))
-
-## [0.8.1a5](https://github.com/NeonGeckoCom/neon_mq_connector/tree/0.8.1a5) (2025-02-24)
-
-[Full Changelog](https://github.com/NeonGeckoCom/neon_mq_connector/compare/0.8.1a4...0.8.1a5)
-
-**Merged pull requests:**
-
-- Update logging and cleanup created MQ Connections [\#129](https://github.com/NeonGeckoCom/neon_mq_connector/pull/129) ([NeonDaniel](https://github.com/NeonDaniel))
-
-## [0.8.1a4](https://github.com/NeonGeckoCom/neon_mq_connector/tree/0.8.1a4) (2025-02-19)
-
-[Full Changelog](https://github.com/NeonGeckoCom/neon_mq_connector/compare/0.8.1a3...0.8.1a4)
-
-**Merged pull requests:**
-
-- Suppress pika error logging around "normal" situations [\#128](https://github.com/NeonGeckoCom/neon_mq_connector/pull/128) ([NeonDaniel](https://github.com/NeonDaniel))
-
-## [0.8.1a3](https://github.com/NeonGeckoCom/neon_mq_connector/tree/0.8.1a3) (2025-02-13)
-
-[Full Changelog](https://github.com/NeonGeckoCom/neon_mq_connector/compare/0.8.1a2...0.8.1a3)
-
-**Merged pull requests:**
-
-- Clean up response queues after single use [\#127](https://github.com/NeonGeckoCom/neon_mq_connector/pull/127) ([NeonDaniel](https://github.com/NeonDaniel))
-
-## [0.8.1a2](https://github.com/NeonGeckoCom/neon_mq_connector/tree/0.8.1a2) (2025-02-10)
-
-[Full Changelog](https://github.com/NeonGeckoCom/neon_mq_connector/compare/0.8.1a1...0.8.1a2)
-
-**Fixed bugs:**
-
-- \[BUG\] MQ Connected services fail to reconnect [\#125](https://github.com/NeonGeckoCom/neon_mq_connector/issues/125)
-
-**Merged pull requests:**
-
-- Raise unhandled retry exceptions [\#126](https://github.com/NeonGeckoCom/neon_mq_connector/pull/126) ([NeonDaniel](https://github.com/NeonDaniel))
-
-## [0.8.1a1](https://github.com/NeonGeckoCom/neon_mq_connector/tree/0.8.1a1) (2025-02-04)
-
-[Full Changelog](https://github.com/NeonGeckoCom/neon_mq_connector/compare/0.8.0...0.8.1a1)
+[Full Changelog](https://github.com/NeonGeckoCom/neon_mq_connector/compare/0.9.1a2...0.9.1a3)
 
 **Implemented enhancements:**
 
-- \[FEAT\] Support for Data Models in MQ Request Handlers [\#108](https://github.com/NeonGeckoCom/neon_mq_connector/issues/108)
+- \[FEAT\] Update unit tests to implement shared logic [\#124](https://github.com/NeonGeckoCom/neon_mq_connector/issues/124)
 
 **Merged pull requests:**
 
-- Handling sync messages and model parsing in `create_mq_callback` [\#123](https://github.com/NeonGeckoCom/neon_mq_connector/pull/123) ([NeonKirill](https://github.com/NeonKirill))
+- Refactor RMQ Test Fixture [\#136](https://github.com/NeonGeckoCom/neon_mq_connector/pull/136) ([NeonDaniel](https://github.com/NeonDaniel))
+
+## [0.9.1a2](https://github.com/NeonGeckoCom/neon_mq_connector/tree/0.9.1a2) (2025-08-26)
+
+[Full Changelog](https://github.com/NeonGeckoCom/neon_mq_connector/compare/0.9.1a1...0.9.1a2)
+
+**Merged pull requests:**
+
+- Supress irrelevant error logs [\#133](https://github.com/NeonGeckoCom/neon_mq_connector/pull/133) ([NeonDaniel](https://github.com/NeonDaniel))
+
+## [0.9.1a1](https://github.com/NeonGeckoCom/neon_mq_connector/tree/0.9.1a1) (2025-06-17)
+
+[Full Changelog](https://github.com/NeonGeckoCom/neon_mq_connector/compare/0.9.0...0.9.1a1)
+
+**Merged pull requests:**
+
+- Implement a `check_health` method to check for failed listener threads [\#134](https://github.com/NeonGeckoCom/neon_mq_connector/pull/134) ([NeonDaniel](https://github.com/NeonDaniel))
 
 
 
