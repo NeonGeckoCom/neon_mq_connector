@@ -333,7 +333,7 @@ class MQConnector(ABC):
             LOG.debug(f"Using select connection for queue: {queue}")
             connection.channel(on_open_callback=_on_channel_open)
 
-        LOG.debug(f"sent message: {request_data['message_id']}")
+        # LOG.debug(f"sent message: {request_data['message_id']}")
         return request_data['message_id']
 
     @classmethod
@@ -386,26 +386,26 @@ class MQConnector(ABC):
             vhost = self.vhost
         if not connection_props:
             connection_props = {}
-        LOG.debug(f'Opening connection on vhost={vhost} queue={queue}')
+        # LOG.debug(f'Opening connection on vhost={vhost} queue={queue}')
         with self.create_mq_connection(vhost=vhost,
                                        **connection_props) as mq_conn:
             if exchange_type in (ExchangeType.fanout,
                                  ExchangeType.fanout.value,):
-                LOG.debug(f'Sending fanout request to exchange: {exchange}')
+                # LOG.debug(f'Sending fanout request to exchange: {exchange}')
                 msg_id = self.publish_message(connection=mq_conn,
                                               request_data=request_data,
                                               exchange=exchange,
                                               expiration=expiration)
             else:
-                LOG.debug(f'Sending {exchange_type} request to exchange '
-                          f'{exchange}')
+                # LOG.debug(f'Sending {exchange_type} request to exchange '
+                #           f'{exchange}')
                 msg_id = self.emit_mq_message(mq_conn,
                                               queue=queue,
                                               request_data=request_data,
                                               exchange=exchange,
                                               exchange_type=exchange_type,
                                               expiration=expiration)
-        LOG.debug(f'Message propagated, id={msg_id}')
+        # LOG.debug(f'Message propagated, id={msg_id}')
         return msg_id
 
     @retry(use_self=True, num_retries=__run_retries__)
