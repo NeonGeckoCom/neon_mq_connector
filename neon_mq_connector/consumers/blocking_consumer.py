@@ -52,7 +52,6 @@ class BlockingConsumerThread(threading.Thread):
                  auto_ack: bool = True,
                  queue_reset: bool = False,
                  queue_exclusive: bool = False,
-                 queue_durable: bool = True,
                  exchange: Optional[str] = None,
                  exchange_reset: bool = False,
                  exchange_type: str = ExchangeType.direct, *args, **kwargs):
@@ -66,9 +65,8 @@ class BlockingConsumerThread(threading.Thread):
         :param auto_ack: Boolean to enable ack of messages upon receipt
         :param queue_reset: If True, delete an existing queue `queue`
         :param queue_exclusive: Marks declared queue as exclusive
-            to a given channel (deletes with it)
-        :param queue_durable: Marks declared queue as durable. Required for
-            non-exclusive queues on RabbitMQ 4.3+
+            to a given channel (deletes with it). Non-exclusive queues are
+            declared durable automatically for RabbitMQ 4.3+ compatibility.
         :param exchange: exchange to bind queue to (optional)
         :param exchange_reset: If True, delete an existing exchange `exchange`
         :param exchange_type: type of exchange to bind to from ExchangeType
@@ -92,7 +90,6 @@ class BlockingConsumerThread(threading.Thread):
         self.queue = queue or ''
         self.queue_reset = queue_reset
         self.queue_exclusive = queue_exclusive
-        self.queue_durable = queue_durable
 
         self.connection_params = connection_params
         self.connection = None
@@ -134,10 +131,11 @@ class BlockingConsumerThread(threading.Thread):
         self.channel.basic_qos(prefetch_count=50)
         if self.queue_reset:
             self.channel.queue_delete(queue=self.queue)
-        declared_queue = self.channel.queue_declare(queue=self.queue,
-                                                    durable=self.queue_durable,
-                                                    auto_delete=False,
-                                                    exclusive=self.queue_exclusive)
+        declared_queue = self.channel.queue_declare(
+            queue=self.queue,
+            durable=not self.queue_exclusive,
+            auto_delete=False,
+            exclusive=self.queue_exclusive)
         if self.exchange:
             if self.exchange_reset:
                 self.channel.exchange_delete(exchange=self.exchange)

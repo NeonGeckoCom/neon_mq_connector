@@ -430,7 +430,6 @@ class MQConnector(ABC):
                           exchange: str = None, exchange_type: str = None,
                           exchange_reset: bool = False,
                           queue_exclusive: bool = False,
-                          queue_durable: bool = True,
                           skip_on_existing: bool = False,
                           restart_attempts: int = __max_consumer_restarts__):
         """
@@ -449,9 +448,9 @@ class MQConnector(ABC):
         :param on_error: Optional method to handle any exceptions
             raised in message handling
         :param auto_ack: Boolean to enable ack of messages upon receipt
-        :param queue_exclusive: if Queue needs to be exclusive
-        :param queue_durable: if Queue needs to be durable (required for
-            non-exclusive queues on RabbitMQ 4.3+)
+        :param queue_exclusive: if Queue needs to be exclusive. Non-exclusive
+            queues are declared durable automatically for RabbitMQ 4.3+
+            compatibility.
         :param skip_on_existing: to skip if consumer already exists
         :param restart_attempts: max instance restart attempts
             (if < 0 - will restart infinitely times)
@@ -478,7 +477,6 @@ class MQConnector(ABC):
                 error_func=error_handler,
                 auto_ack=auto_ack,
                 queue_exclusive=queue_exclusive,
-                queue_durable=queue_durable,
             )
         self.consumer_properties[name]['restart_attempts'] = int(restart_attempts)
         self.consumer_properties[name]['started'] = False
@@ -589,8 +587,7 @@ class MQConnector(ABC):
                                       on_error=on_error, exchange=exchange,
                                       exchange_type=ExchangeType.fanout.value,
                                       exchange_reset=exchange_reset,
-                                      auto_ack=auto_ack, queue_exclusive=True,
-                                      queue_durable=False,
+                                      auto_ack=auto_ack, queue_exclusive=False,
                                       skip_on_existing=skip_on_existing,
                                       restart_attempts=restart_attempts)
 
