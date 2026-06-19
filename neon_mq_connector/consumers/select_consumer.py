@@ -54,6 +54,7 @@ class SelectConsumerThread(threading.Thread):
                  auto_ack: bool = True,
                  queue_reset: bool = False,
                  queue_exclusive: bool = False,
+                 queue_durable: bool = True,
                  exchange: Optional[str] = None,
                  exchange_reset: bool = False,
                  exchange_type: str = ExchangeType.direct,
@@ -69,6 +70,8 @@ class SelectConsumerThread(threading.Thread):
         :param queue_reset: If True, delete an existing queue `queue`
         :param queue_exclusive: Marks declared queue as exclusive
             to a given channel (deletes with it)
+        :param queue_durable: Marks declared queue as durable. Required for
+            non-exclusive queues on RabbitMQ 4.3+
         :param exchange: exchange to bind queue to (optional)
         :param exchange_reset: If True, delete an existing exchange `exchange`
         :param exchange_type: type of exchange to bind to from ExchangeType
@@ -100,6 +103,7 @@ class SelectConsumerThread(threading.Thread):
         self.queue = queue or ''
         self.channel = None
         self.queue_exclusive = queue_exclusive
+        self.queue_durable = queue_durable
         self.auto_ack = auto_ack
 
         self.connection_params = connection_params
@@ -149,6 +153,7 @@ class SelectConsumerThread(threading.Thread):
 
     def declare_queue(self, _unused_frame: Optional[Method] = None):
         return self.channel.queue_declare(queue=self.queue,
+                                          durable=self.queue_durable,
                                           exclusive=self.queue_exclusive,
                                           auto_delete=False,
                                           callback=self.on_queue_declared)
