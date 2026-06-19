@@ -314,7 +314,6 @@ class MQConnector(ABC):
                                              auto_delete=False)
             if queue:
                 declared_queue = new_channel.queue_declare(queue=queue,
-                                                           durable=True,
                                                            auto_delete=False)
                 if exchange_type == ExchangeType.fanout.value:
                     new_channel.queue_bind(queue=declared_queue.method.queue,
