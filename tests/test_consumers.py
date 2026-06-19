@@ -29,7 +29,7 @@
 import pytest
 
 from os import environ
-from time import sleep
+from time import monotonic, sleep
 from unittest.mock import Mock
 from unittest import TestCase
 from pika.connection import ConnectionParameters
@@ -39,6 +39,16 @@ from pika.exchange_type import ExchangeType
 from neon_minerva.integration.rabbit_mq import rmq_instance  # noqa: F401
 
 environ["TEST_RMQ_VHOSTS"] = "/neon_testing"
+
+
+class TestQueueDurability(TestCase):
+    def test_queue_is_durable(self):
+        from neon_mq_connector.utils.consumer_utils import queue_is_durable
+        # Non-exclusive queues must be durable (RabbitMQ 4.3+ rejects
+        # transient non-exclusive queues)
+        self.assertTrue(queue_is_durable(queue_exclusive=False))
+        # Exclusive queues are transient (deleted with their connection)
+        self.assertFalse(queue_is_durable(queue_exclusive=True))
 
 
 @pytest.mark.usefixtures("rmq_instance")
@@ -173,6 +183,7 @@ class TestSelectConsumer(TestCase):
         self.assertFalse(test_thread.is_consumer_alive)
         test_thread.on_close.assert_not_called()
 
+    @pytest.mark.timeout(60)
     def test_handle_reconnection(self):
         from neon_mq_connector.consumers.select_consumer import SelectConsumerThread
         connection_params = ConnectionParameters(host='localhost',
@@ -188,6 +199,9 @@ class TestSelectConsumer(TestCase):
         # Valid thread
         test_thread = SelectConsumerThread(connection_params, queue, callback,
                                            error)
+        # Reconnect promptly after the broker shutdown triggered below instead
+        # of the production default (waiting for the server to come back).
+        test_thread.server_shutdown_reconnect_delay = 1
         test_thread.on_connected = Mock(side_effect=test_thread.on_connected)
         test_thread.on_channel_open = Mock(side_effect=test_thread.on_channel_open)
         test_thread.on_close = Mock(side_effect=test_thread.on_close)
@@ -207,8 +221,10 @@ class TestSelectConsumer(TestCase):
         self.assertTrue(test_thread.is_consumer_alive)
 
         self.rmq_instance.start()
-        # TODO: Wait for re-connection
+        reconnect_deadline = monotonic() + 30
         while not test_thread.is_consuming:
+            if monotonic() > reconnect_deadline:
+                self.fail("Consumer did not reconnect within 30s")
             sleep(0.1)
         self.assertTrue(test_thread.is_consuming)
         self.assertTrue(test_thread.is_consumer_alive)
