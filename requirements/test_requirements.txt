@@ -1,3 +1,4 @@
 pytest~=8.0
+pytest-timeout~=2.3
 parameterized~=0.9.0
 neon-minerva[rmq]~=0.3
