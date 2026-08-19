@@ -30,6 +30,18 @@
 from ovos_utils.log import LOG
 
 
+def queue_is_durable(queue_exclusive: bool) -> bool:
+    """
+    Determine whether a queue should be declared durable. RabbitMQ 4.3+ rejects
+    transient (non-durable) non-exclusive queues, so non-exclusive queues are
+    durable while exclusive queues remain transient (deleted with their
+    declaring connection).
+    :param queue_exclusive: True if the queue is declared exclusive
+    :returns: True if the queue should be declared durable
+    """
+    return not queue_exclusive
+
+
 def default_error_handler(*args):
     """
     Default handler for Consumer instances

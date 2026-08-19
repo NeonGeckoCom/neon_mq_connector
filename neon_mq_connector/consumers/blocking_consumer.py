@@ -65,7 +65,8 @@ class BlockingConsumerThread(threading.Thread):
         :param auto_ack: Boolean to enable ack of messages upon receipt
         :param queue_reset: If True, delete an existing queue `queue`
         :param queue_exclusive: Marks declared queue as exclusive
-            to a given channel (deletes with it)
+            to a given channel (deletes with it). Non-exclusive queues are
+            declared durable automatically for RabbitMQ 4.3+ compatibility.
         :param exchange: exchange to bind queue to (optional)
         :param exchange_reset: If True, delete an existing exchange `exchange`
         :param exchange_type: type of exchange to bind to from ExchangeType
@@ -130,9 +131,11 @@ class BlockingConsumerThread(threading.Thread):
         self.channel.basic_qos(prefetch_count=50)
         if self.queue_reset:
             self.channel.queue_delete(queue=self.queue)
-        declared_queue = self.channel.queue_declare(queue=self.queue,
-                                                    auto_delete=False,
-                                                    exclusive=self.queue_exclusive)
+        declared_queue = self.channel.queue_declare(
+            queue=self.queue,
+            durable=consumer_utils.queue_is_durable(self.queue_exclusive),
+            auto_delete=False,
+            exclusive=self.queue_exclusive)
         if self.exchange:
             if self.exchange_reset:
                 self.channel.exchange_delete(exchange=self.exchange)

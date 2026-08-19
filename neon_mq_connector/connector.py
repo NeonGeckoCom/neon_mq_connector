@@ -43,6 +43,7 @@ from ovos_utils.log import LOG
 from neon_mq_connector.config import load_neon_mq_config
 from neon_mq_connector.consumers import BlockingConsumerThread, SelectConsumerThread
 
+from neon_mq_connector.utils import consumer_utils
 from neon_mq_connector.utils.connection_utils import wait_for_mq_startup, retry
 from neon_mq_connector.utils.network_utils import dict_to_b64
 from neon_mq_connector.utils.thread_utils import RepeatingTimer
@@ -313,8 +314,14 @@ class MQConnector(ABC):
                                              exchange_type=exchange_type,
                                              auto_delete=False)
             if queue:
-                declared_queue = new_channel.queue_declare(queue=queue,
-                                                           auto_delete=False)
+                # Producers publish to non-exclusive queues, which must be
+                # durable to match the consumer declaration (RabbitMQ 4.3+
+                # rejects transient non-exclusive queues).
+                declared_queue = new_channel.queue_declare(
+                    queue=queue,
+                    durable=consumer_utils.queue_is_durable(
+                        queue_exclusive=False),
+                    auto_delete=False)
                 if exchange_type == ExchangeType.fanout.value:
                     new_channel.queue_bind(queue=declared_queue.method.queue,
                                            exchange=exchange)
@@ -447,7 +454,9 @@ class MQConnector(ABC):
         :param on_error: Optional method to handle any exceptions
             raised in message handling
         :param auto_ack: Boolean to enable ack of messages upon receipt
-        :param queue_exclusive: if Queue needs to be exclusive
+        :param queue_exclusive: if Queue needs to be exclusive. Non-exclusive
+            queues are declared durable automatically for RabbitMQ 4.3+
+            compatibility.
         :param skip_on_existing: to skip if consumer already exists
         :param restart_attempts: max instance restart attempts
             (if < 0 - will restart infinitely times)

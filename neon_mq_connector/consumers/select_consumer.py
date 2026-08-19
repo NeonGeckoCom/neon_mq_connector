@@ -68,7 +68,8 @@ class SelectConsumerThread(threading.Thread):
         :param auto_ack: Boolean to enable ack of messages upon receipt
         :param queue_reset: If True, delete an existing queue `queue`
         :param queue_exclusive: Marks declared queue as exclusive
-            to a given channel (deletes with it)
+            to a given channel (deletes with it). Non-exclusive queues are
+            declared durable automatically for RabbitMQ 4.3+ compatibility.
         :param exchange: exchange to bind queue to (optional)
         :param exchange_reset: If True, delete an existing exchange `exchange`
         :param exchange_type: type of exchange to bind to from ExchangeType
@@ -109,6 +110,9 @@ class SelectConsumerThread(threading.Thread):
         self.connection: Optional[pika.SelectConnection] = None
         self.connection_failed_attempts = 0
         self.max_connection_failed_attempts = 3
+        # Delay (in seconds) before reconnecting after a broker-initiated
+        # shutdown (AMQP reply code 320). Gives the server time to come back.
+        self.server_shutdown_reconnect_delay = 60
 
     def create_connection(self) -> pika.SelectConnection:
         return pika.SelectConnection(parameters=self.connection_params,
@@ -148,8 +152,10 @@ class SelectConsumerThread(threading.Thread):
         self._channel_closed.set()
 
     def declare_queue(self, _unused_frame: Optional[Method] = None):
-        return self.channel.queue_declare(queue=self.queue,
-                                          exclusive=self.queue_exclusive,
+        return self.channel.queue_declare(
+            queue=self.queue,
+            durable=consumer_utils.queue_is_durable(self.queue_exclusive),
+            exclusive=self.queue_exclusive,
                                           auto_delete=False,
                                           callback=self.on_queue_declared)
 
@@ -207,8 +213,10 @@ class SelectConsumerThread(threading.Thread):
             LOG.error(f"MQ connection closed due to exception: {e}")
         if not self._stopping:
             if hasattr(e, "reply_code") and e.reply_code == 320:
-                LOG.info(f"Server shutdown. Try to reconnect after 60s (t={self.name})")
-                self.reconnect(60)
+                LOG.info(f"Server shutdown. Try to reconnect after "
+                         f"{self.server_shutdown_reconnect_delay}s "
+                         f"(t={self.name})")
+                self.reconnect(self.server_shutdown_reconnect_delay)
             else:
                 # Connection was lost or closed by the server. Try to re-connect
                 LOG.info(f"Trying to reconnect after server connection loss")
