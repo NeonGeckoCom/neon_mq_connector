@@ -133,7 +133,7 @@ class BlockingConsumerThread(threading.Thread):
             self.channel.queue_delete(queue=self.queue)
         declared_queue = self.channel.queue_declare(
             queue=self.queue,
-            durable=not self.queue_exclusive,
+            durable=consumer_utils.queue_is_durable(self.queue_exclusive),
             auto_delete=False,
             exclusive=self.queue_exclusive)
         if self.exchange:

@@ -154,7 +154,7 @@ class SelectConsumerThread(threading.Thread):
     def declare_queue(self, _unused_frame: Optional[Method] = None):
         return self.channel.queue_declare(
             queue=self.queue,
-            durable=not self.queue_exclusive,
+            durable=consumer_utils.queue_is_durable(self.queue_exclusive),
             exclusive=self.queue_exclusive,
                                           auto_delete=False,
                                           callback=self.on_queue_declared)
