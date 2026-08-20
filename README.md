@@ -75,7 +75,7 @@ will be returned, the following requirements must be met:
 - Each response must be a dict with `_part` and `_is_final` keys.
 - `_part` is defined as a non-negative integer (the first response will specify `0`).
 - The final response must specify `_is_final=True`
-- The final response *MUST NOT* require the client to handle partial responses
+- The final response must be complete and *MUST NOT* require the client to handle partial responses
 
 ## Client Requests
 Most client applications will interact with services via `send_mq_request`. This
@@ -89,6 +89,9 @@ by `send_mq_request`. Keep in mind that the `timeout` param passed to
 `send_mq_request` applies to the full response, so the `timeout` value should
 reflect the longest time it will take for a final response to be generated, plus
 some margin.
+
+> Note: Responses may be received out of order, so the client is responsible 
+  for monitoring the `_part` and `_is_final` fields as needed
 
 ### Asynchronous Consumers
 By default, async-based consumers handling based on `pika.SelectConnection` will
