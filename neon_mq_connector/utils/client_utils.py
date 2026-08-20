@@ -89,10 +89,12 @@ def send_mq_request(vhost: str, request_data: dict, target_queue: str,
     :param response_queue: optional queue to monitor for a response.
         Generally should be blank
     :param timeout: time in seconds to wait for a complete response before
-        timing out. Note that in the event of a timeout, a partial response may
-        have been handled by `stream_callback`.
+        timing out. On timeout or malformed response, handlers are cleaned up
+        and an empty dict is returned. Note that in the event of a timeout, a
+        partial response may have been handled by `stream_callback`.
     :param expect_response: boolean indicating whether a response is expected
-    :param stream_callback: Optional function to pass partial responses to
+    :param stream_callback: Optional function called with each received response
+        when provided, including the final result returned by this function
     :return: response to request
     """
     response_queue = response_queue or uuid.uuid4().hex
@@ -100,6 +102,7 @@ def send_mq_request(vhost: str, request_data: dict, target_queue: str,
     response_event = Event()
     message_id = None
     response_data = dict()
+    response_error = None
     config = dict()
 
     def on_error(thread, error):
@@ -116,7 +119,20 @@ def send_mq_request(vhost: str, request_data: dict, target_queue: str,
         Method that handles Neon API output.
         In case received output message with the desired id, event stops
         """
-        api_output = b64_to_dict(body)
+        nonlocal response_error
+        try:
+            api_output = b64_to_dict(body)
+        except Exception as e:
+            LOG.exception(f"Malformed MQ response on {response_queue}")
+            response_error = e
+            try:
+                channel.basic_ack(delivery_tag=method.delivery_tag)
+                channel.queue_delete(response_queue)
+                channel.close()
+            except Exception:
+                LOG.exception("Failed to clean up after malformed MQ response")
+            response_event.set()
+            return
 
         # Backwards-compat. handles `context` in response for raw `Message`
         # objects sent across the MQ bus
@@ -129,17 +145,12 @@ def send_mq_request(vhost: str, request_data: dict, target_queue: str,
         if api_output_msg_id == message_id:
             LOG.debug(f'MQ output: {api_output}')
             channel.basic_ack(delivery_tag=method.delivery_tag)
-            if isinstance(api_output.get('_part'), int):
-                # Handle multi-part responses
-                if stream_callback:
-                    # Pass each part to the stream callback method if defined
-                    stream_callback(api_output)
-                if api_output.get('_is_final'):
-                    # Always return final result
-                    response_data.update(api_output)
-            else:
-                response_data.update(api_output)
+            if stream_callback:
+                stream_callback(api_output)
+            # `_is_final` defaults to True so a payload is always returned when
+            # the client stops waiting, including single-part responses.
             if api_output.get('_is_final', True):
+                response_data.update(api_output)
                 channel.queue_delete(response_queue)
                 channel.close()
                 response_event.set()
@@ -174,11 +185,14 @@ def send_mq_request(vhost: str, request_data: dict, target_queue: str,
 
         if expect_response:
             response_event.wait(timeout)
-            if not response_event.is_set():
-                LOG.error(f"Timeout waiting for response to: {message_id} on "
-                          f"{response_queue}")
             with SuppressPikaLogging():
                 neon_api_mq_handler.stop_consumers()
+            if response_error:
+                LOG.error(f"Malformed response to: {message_id} on "
+                          f"{response_queue}")
+            elif not response_event.is_set():
+                LOG.error(f"Timeout waiting for response to: {message_id} on "
+                          f"{response_queue}")
     except ProbableAccessDeniedError:
         raise ValueError(f"{vhost} is not a valid endpoint for "
                          f"{config.get('users').get('mq_handler').get('user')}")
