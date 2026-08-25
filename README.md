@@ -72,9 +72,9 @@ is a `bytes` response (generally a `base64`-encoded `dict`).
 A callback function may choose to publish multiple response messages so the client
 may receive partial responses as they are being generated. If multiple responses
 will be returned, the following requirements must be met:
-- Each response must be a dict with `_part` and `_is_final` keys.
-- `_part` is defined as a non-negative integer (the first response will specify `0`).
-- The final response must specify `_is_final=True`
+- Each response must be a dict with `part` and `is_final` keys.
+- `part` is defined as a non-negative integer (the first response will specify `0`).
+- The final response must specify `is_final=True`
 - The final response must be complete and *MUST NOT* require the client to handle partial responses
 
 ## Client Requests
@@ -91,7 +91,7 @@ reflect the longest time it will take for a final response to be generated, plus
 some margin.
 
 > Note: Responses may be received out of order, so the client is responsible 
-  for monitoring the `_part` and `_is_final` fields as needed
+  for monitoring the `part` and `is_final` fields as needed
 
 ### Asynchronous Consumers
 By default, async-based consumers handling based on `pika.SelectConnection` will

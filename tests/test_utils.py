@@ -146,8 +146,8 @@ class SimpleMQConnector(MQConnector):
         for i in range(num_parts):
             response_text += f" {i}"
             response = {**base_response, **{"response": response_text,
-                                            "_part": i,
-                                            "_is_final": i == num_parts - 1}}
+                                            "part": i,
+                                            "is_final": i == num_parts - 1}}
             channel.basic_publish(exchange='',
                                   routing_key=reply_channel,
                                   body=dict_to_b64(response),
@@ -258,23 +258,23 @@ class TestClientUtils(unittest.TestCase):
                          stream_callback.call_args_list)
 
         parts = [call[0][0] for call in stream_callback.call_args_list]
-        # Completeness is defined by `_part`, not callback arrival order
-        parts_by_index = sorted(parts, key=lambda p: p["_part"])
-        self.assertEqual([p["_part"] for p in parts_by_index],
+        # Completeness is defined by `part`, not callback arrival order
+        parts_by_index = sorted(parts, key=lambda p: p["part"])
+        self.assertEqual([p["part"] for p in parts_by_index],
                          list(range(request["num_parts"])))
         for earlier, later in zip(parts_by_index, parts_by_index[1:]):
             self.assertTrue(later["response"].startswith(earlier["response"]),
                             (earlier["response"], later["response"]))
-            self.assertFalse(earlier.get("_is_final"))
-        self.assertTrue(parts_by_index[-1]["_is_final"])
+            self.assertFalse(earlier.get("is_final"))
+        self.assertTrue(parts_by_index[-1]["is_final"])
 
         self.assertIsInstance(response, dict, response)
         self.assertTrue(response.get("success"), response)
         self.assertEqual(response["request_data"], request["data"])
         self.assertEqual(len(response['response'].split()), request['num_parts'])
-        self.assertTrue(response['_is_final'])
+        self.assertTrue(response['is_final'])
 
-        final_callback = next(p for p in parts if p.get("_is_final"))
+        final_callback = next(p for p in parts if p.get("is_final"))
         self.assertEqual(response, final_callback)
 
     def test_multi_part_mq_response_without_stream_callback(self):
@@ -286,7 +286,7 @@ class TestClientUtils(unittest.TestCase):
         self.assertTrue(response.get("success"), response)
         self.assertEqual(response["request_data"], request["data"])
         self.assertEqual(len(response['response'].split()), request['num_parts'])
-        self.assertTrue(response['_is_final'])
+        self.assertTrue(response['is_final'])
 
     def test_send_mq_request_timeout_cleans_up(self):
         from neon_mq_connector.utils.client_utils import send_mq_request

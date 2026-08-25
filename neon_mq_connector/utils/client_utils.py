@@ -147,9 +147,9 @@ def send_mq_request(vhost: str, request_data: dict, target_queue: str,
             channel.basic_ack(delivery_tag=method.delivery_tag)
             if stream_callback:
                 stream_callback(api_output)
-            # `_is_final` defaults to True so a payload is always returned when
+            # `is_final` defaults to True so a payload is always returned when
             # the client stops waiting, including single-part responses.
-            if api_output.get('_is_final', True):
+            if api_output.get('is_final', True):
                 response_data.update(api_output)
                 channel.queue_delete(response_queue)
                 channel.close()
