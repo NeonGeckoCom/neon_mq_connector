@@ -57,6 +57,8 @@ RANDOM_STR = str(int(time.time()))
 
 INPUT_CHANNEL_A = RANDOM_STR + '_a'
 INPUT_CHANNEL_B = RANDOM_STR + '_b'
+INPUT_CHANNEL_MULTI = RANDOM_STR + '_multi'
+INPUT_CHANNEL_MALFORMED = RANDOM_STR + '_malformed'
 OUTPUT_CHANNEL = RANDOM_STR + '_output'
 
 TEST_DICT = {b"section 1": {"key1": "val1",
@@ -131,6 +133,37 @@ class SimpleMQConnector(MQConnector):
             "request_data": body["data"],
         }
 
+    @staticmethod
+    def respond_multiple(channel, method, _, body):
+        request = b64_to_dict(body)
+        num_parts = request.get("num_parts", 3)
+        base_response = {"message_id": request["message_id"],
+                         "success": True,
+                         "request_data": request["data"]}
+        reply_channel = request.get("routing_key")
+        channel.queue_declare(queue=reply_channel)
+        response_text = ""
+        for i in range(num_parts):
+            response_text += f" {i}"
+            response = {**base_response, **{"response": response_text,
+                                            "part": i,
+                                            "is_final": i == num_parts - 1}}
+            channel.basic_publish(exchange='',
+                                  routing_key=reply_channel,
+                                  body=dict_to_b64(response),
+                                  properties=pika.BasicProperties(expiration='1000'))
+        channel.basic_ack(delivery_tag=method.delivery_tag)
+
+    @staticmethod
+    def respond_malformed(channel, method, _, body):
+        request = b64_to_dict(body)
+        reply_channel = request.get("routing_key")
+        channel.queue_declare(queue=reply_channel)
+        channel.basic_publish(exchange='',
+                              routing_key=reply_channel,
+                              body=b'not-valid-b64',
+                              properties=pika.BasicProperties(expiration='1000'))
+        channel.basic_ack(delivery_tag=method.delivery_tag)
 
 
 @pytest.mark.usefixtures("rmq_instance")
@@ -160,6 +193,16 @@ class TestClientUtils(unittest.TestCase):
                                                   INPUT_CHANNEL_B,
                                                   self.test_connector.respond_wrapped,
                                                   auto_ack=False)
+            self.test_connector.register_consumer("neon_utils_test_multi",
+                                                  vhost,
+                                                  INPUT_CHANNEL_MULTI,
+                                                  self.test_connector.respond_multiple,
+                                                  auto_ack=False)
+            self.test_connector.register_consumer("neon_utils_test_malformed",
+                                                  vhost,
+                                                  INPUT_CHANNEL_MALFORMED,
+                                                  self.test_connector.respond_malformed,
+                                                  auto_ack=False)
             self.test_connector.run_consumers()
 
     @classmethod
@@ -174,6 +217,16 @@ class TestClientUtils(unittest.TestCase):
         self.assertIsInstance(response, dict)
         self.assertTrue(response["success"])
         self.assertEqual(response["request_data"], request["data"])
+
+        # Test with streaming callback
+        stream_callback = Mock()
+        response = send_mq_request("/neon_testing", request, INPUT_CHANNEL_A,
+                                   stream_callback=stream_callback)
+        self.assertIsInstance(response, dict)
+        self.assertTrue(response["success"])
+        self.assertEqual(response["request_data"], request["data"])
+        self.assertEqual(stream_callback.call_count, 1)
+        self.assertEqual(response, stream_callback.call_args[0][0])
 
     def test_send_mq_request_spec_output_channel_valid(self):
         from neon_mq_connector.utils.client_utils import send_mq_request
@@ -192,6 +245,66 @@ class TestClientUtils(unittest.TestCase):
         self.assertIsInstance(response, dict)
         self.assertTrue(response["success"])
         self.assertEqual(response["request_data"], request["data"])
+
+    def test_multi_part_mq_response(self):
+        from neon_mq_connector.utils.client_utils import send_mq_request
+        request = {"data": time.time(),
+                   "num_parts": 5}
+        stream_callback = Mock()
+        response = send_mq_request("/neon_testing", request, INPUT_CHANNEL_MULTI,
+                                   stream_callback=stream_callback)
+
+        self.assertEqual(stream_callback.call_count, request['num_parts'],
+                         stream_callback.call_args_list)
+
+        parts = [call[0][0] for call in stream_callback.call_args_list]
+        # Completeness is defined by `part`, not callback arrival order
+        parts_by_index = sorted(parts, key=lambda p: p["part"])
+        self.assertEqual([p["part"] for p in parts_by_index],
+                         list(range(request["num_parts"])))
+        for earlier, later in zip(parts_by_index, parts_by_index[1:]):
+            self.assertTrue(later["response"].startswith(earlier["response"]),
+                            (earlier["response"], later["response"]))
+            self.assertFalse(earlier.get("is_final"))
+        self.assertTrue(parts_by_index[-1]["is_final"])
+
+        self.assertIsInstance(response, dict, response)
+        self.assertTrue(response.get("success"), response)
+        self.assertEqual(response["request_data"], request["data"])
+        self.assertEqual(len(response['response'].split()), request['num_parts'])
+        self.assertTrue(response['is_final'])
+
+        final_callback = next(p for p in parts if p.get("is_final"))
+        self.assertEqual(response, final_callback)
+
+    def test_multi_part_mq_response_without_stream_callback(self):
+        from neon_mq_connector.utils.client_utils import send_mq_request
+        request = {"data": time.time(),
+                   "num_parts": 5}
+        response = send_mq_request("/neon_testing", request, INPUT_CHANNEL_MULTI)
+        self.assertIsInstance(response, dict, response)
+        self.assertTrue(response.get("success"), response)
+        self.assertEqual(response["request_data"], request["data"])
+        self.assertEqual(len(response['response'].split()), request['num_parts'])
+        self.assertTrue(response['is_final'])
+
+    def test_send_mq_request_timeout_cleans_up(self):
+        from neon_mq_connector.utils.client_utils import send_mq_request
+        response = send_mq_request("/neon_testing", {"data": time.time()},
+                                   f"{RANDOM_STR}_no_consumer", timeout=1)
+        self.assertEqual(response, {})
+        request = {"data": time.time()}
+        response = send_mq_request("/neon_testing", request, INPUT_CHANNEL_A)
+        self.assertTrue(response["success"])
+
+    def test_send_mq_request_malformed_response_cleans_up(self):
+        from neon_mq_connector.utils.client_utils import send_mq_request
+        response = send_mq_request("/neon_testing", {"data": time.time()},
+                                   INPUT_CHANNEL_MALFORMED, timeout=5)
+        self.assertEqual(response, {})
+        request = {"data": time.time()}
+        response = send_mq_request("/neon_testing", request, INPUT_CHANNEL_A)
+        self.assertTrue(response["success"])
 
     def test_multiple_mq_requests(self):
         from neon_mq_connector.utils.client_utils import send_mq_request
