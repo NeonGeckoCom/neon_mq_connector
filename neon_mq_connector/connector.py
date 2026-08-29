@@ -549,7 +549,7 @@ class MQConnector(ABC):
             self.consumer_properties[name]['num_restarted'] += 1
         if err_msg:
             self.consumer_properties[name]['dead'] = True
-            LOG.error(f'Cannot restart consumer "{name}" - {err_msg}')
+            raise RuntimeError(err_msg)
 
     def register_subscriber(self, name: str, vhost: str,
                             callback: callable,
@@ -725,7 +725,12 @@ class MQConnector(ABC):
                          and consumer_instance.is_alive()
                          and consumer_instance.is_consumer_alive)):
                 LOG.info(f'Consumer "{consumer_name}" is dead, restarting')
-                self.restart_consumer(name=consumer_name)
+                try:
+                    self.restart_consumer(name=consumer_name)
+                except RuntimeError as e:
+                    raise RuntimeError(
+                            f"Failed to restart consumer {consumer_name}"
+                            ) from e
 
     @property
     def observer_thread(self):
